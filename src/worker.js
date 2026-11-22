@@ -6,7 +6,7 @@ import cfg from './config.js';
 import {initial,check,execute,watch,equity,closedMarket,scenario} from './engine.js';
 import {market,quotes,headlines,chartBars} from './data.js';
 import {ANALYST_PROMPT,CRITIC_PROMPT,CRITIC_SCHEMA} from './prompts.js';
-import {probeSources,ASSETS} from './markets.js';
+import {probeSources,probeFiat,ASSETS} from './markets.js';
 import {analyzeAsset,findAsset} from './market-data.js';
 import {marketScan,signalJournal} from './market-scan.js';
 // Отдельные расписания: валютный агент и сканер рынков работают в разных запусках,
@@ -131,6 +131,7 @@ export default {
  }));
  }
  if(path==='/api/markets/sources'&&req.method==='GET')return json(await probeSources());
+ if(path==='/api/markets/fiat-sources'&&req.method==='GET')return json(await probeFiat());
  if(path==='/api/markets/signals'&&req.method==='GET')return json(await signalJournal(env));
  if(path==='/api/markets/scan'&&req.method==='POST'){const t=Date.now();const r=await marketScan(env);return json({...r,ms:Date.now()-t});}
  if(path==='/api/markets/assets'&&req.method==='GET')return json({assets:ASSETS.map(({id,name,group})=>({id,name,group}))});

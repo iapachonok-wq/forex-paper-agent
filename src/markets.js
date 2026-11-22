@@ -78,3 +78,17 @@ export async function probeSources(request = fetch) {
   for (const a of ASSETS) for (const y of a.yahoo) add('yahoo', y, `${YAHOO}/v8/finance/chart/${encodeURIComponent(y)}?interval=15m&range=5d`, READERS.yahoo);
   return {checkedAt: Date.now(), results: await Promise.all(jobs)};
 }
+
+// Какие валюты и металлы торгуются к USDT на биржах, доступных из Cloudflare. Отдельный вызов,
+// чтобы не превысить лимит подзапросов основной проверки.
+export const FIAT_BASES = ['XAU', 'XAG', 'EUR', 'GBP', 'JPY', 'AUD', 'CHF', 'CAD', 'NZD'];
+export async function probeFiat(request = fetch) {
+  const jobs = [], re = new RegExp('^(' + FIAT_BASES.join('|') + ')');
+  const add = (source, symbol, url, read) => jobs.push(timed(request, url, read).then(r => ({source, symbol, ...r})));
+  for (const cat of ['linear', 'spot']) add('bybit', 'тикеры ' + cat, `${BYBIT}/v5/market/tickers?category=${cat}`, j => ({symbols: (j.result?.list || []).map(x => x.symbol).filter(s => re.test(s)).sort().join(' ') || 'нет'}));
+  for (const b of FIAT_BASES) {
+    add('mexc', b + 'USDT', `${MEXC}/api/v3/ticker/24hr?symbol=${b}USDT`, j => ({price: Number(j.lastPrice), volume: Number(j.quoteVolume)}));
+    add('gate', b + '_USDT', `${GATE}/api/v4/spot/tickers?currency_pair=${b}_USDT`, j => ({price: Number(j[0]?.last), volume: Number(j[0]?.quote_volume)}));
+  }
+  return {checkedAt: Date.now(), results: await Promise.all(jobs)};
+}
