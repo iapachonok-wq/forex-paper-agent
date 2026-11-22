@@ -1,7 +1,12 @@
 // Порт правила «тренд + зона + сигнал» из crypto-signal-bot/bot.py.
 // Свечи: [{t (мс, открытие), o, h, l, c, v}], только закрытые, по возрастанию времени.
 // Числа и риск считает только код; модель сюда не вмешивается.
-export const RULES = {account_usd: 1000, risk_pct: 1.0, min_rr: 1.5, max_stop_pct: 2.0, volume_mult: 1.2, zone_atr: 0.6, funding_warn_pct: 0.05};
+// fee_pct — комиссия за одну сторону сделки в процентах. В bot.py её нет, поэтому по умолчанию 0;
+// раздел «Рынки» подставляет оценку комиссии площадки (см. FEES в markets.js).
+export const RULES = {account_usd: 1000, risk_pct: 1.0, min_rr: 1.5, max_stop_pct: 2.0, volume_mult: 1.2, zone_atr: 0.6, funding_warn_pct: 0.05, fee_pct: 0};
+// Комиссия за вход и выход в единицах цены и чистое отношение прибыли к риску.
+export const roundTripCost = (entry, cfg) => entry * (cfg.fee_pct || 0) / 100 * 2;
+export const netRR = (reward, risk, cost) => (reward - cost) / (risk + cost);
 
 // pandas ewm(adjust=False): первое значение без сглаживания, ведущие NaN пропускаются.
 function ewm(values, alpha) {
@@ -120,12 +125,16 @@ export function analyze(symbol, d15, d1h, d4h, cfg = RULES, extra = {}) {
     if (rrB < 2) tp1 = barriers[0];
   }
   const tp2 = entry + d * 3 * risk, rr = (tp1 - entry) * d / risk;
+  const cost = roundTripCost(entry, cfg), rrNet = netRR((tp1 - entry) * d, risk, cost);
+  if (cost > 0 && rrNet < cfg.min_rr) return {signal: null, reasons: [...reasons, `с учётом комиссии ${fixed(cfg.fee_pct, 3)} % за сторону до цели ${fmt(tp1)} только ${fixed(Math.trunc(rrNet * 100) / 100, 2)}R, меньше ${fixed(cfg.min_rr, 2)}R`]};
   const warnings = [], fp = extra.funding_pct;
   if (fp != null && Math.abs(fp) >= cfg.funding_warn_pct && (fp > 0) === (d > 0)) warnings.push(`ставка финансирования ${signed(fp, 3)} %: толпа уже стоит в эту сторону`);
   const riskUsd = cfg.account_usd * cfg.risk_pct / 100;
   const signal = {
     id: `${symbol}-${stamp(last.t)}`, symbol, dir: d, side, time: iso(last.t), entry, stop, tp1, tp2, rr,
-    risk_pct_price: risk / entry * 100, qty: riskUsd / risk, risk_usd: riskUsd, reasons, warnings, zone: zval,
+    // Размер считается так, чтобы потеря на стопе вместе с комиссией была равна риску.
+    risk_pct_price: risk / entry * 100, qty: riskUsd / (risk + cost), risk_usd: riskUsd, reasons, warnings, zone: zval,
+    fee_pct: cfg.fee_pct || 0, cost, rr_net: rrNet, cost_r: cost / risk,
     levels: [...f.supports.slice(-3), ...f.resists.slice(0, 3)], rsi: f.r15.at(-1), atr15: f.a15,
     funding_pct: fp ?? null, oi_change_pct: extra.oi_change_pct ?? null,
   };

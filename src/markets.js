@@ -23,6 +23,10 @@ export const ASSETS = [
 ];
 // Порядок источников: первый ответивший с достаточной историей используется для анализа.
 export const CHAINS = {crypto: ['bybit', 'gate', 'mexc', 'kraken', 'yahoo'], metal: ['yahoo'], index: ['yahoo']};
+// Оценка комиссии за одну сторону сделки, % (тейкер, без скидок). Для металлов и индексов —
+// фьючерсы CME/COMEX, где комиссия брокера мала относительно цены; это ориентир, не тариф брокера.
+export const FEES = {bybit: 0.055, gate: 0.1, mexc: 0.05, kraken: 0.4, yahoo: {crypto: 0.1, metal: 0.01, index: 0.01}};
+export const feeFor = (asset, source) => typeof FEES[source] === 'number' ? FEES[source] : FEES[source][asset.group];
 export const SOURCE_LABELS = {bybit: 'Bybit, бессрочные фьючерсы', gate: 'Gate, спот', mexc: 'MEXC, спот', kraken: 'Kraken, спот к USD', yahoo: 'Yahoo Finance'};
 
 async function timed(request, url, read) {

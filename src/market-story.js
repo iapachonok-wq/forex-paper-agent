@@ -1,5 +1,5 @@
 // Разбор словами и данные для графика. Всё считает код по тем же формулам, что и правило; ИИ не участвует.
-import {features, divergence, fmt, ema, rsi, vwapDaily, RULES} from './market-rules.js';
+import {features, divergence, fmt, ema, rsi, vwapDaily, RULES, roundTripCost, netRR} from './market-rules.js';
 
 const pct = (a, b) => (a / b - 1) * 100;
 const label = name => name.startsWith('уровень ') ? 'уровня ' + name.slice(8) : name;
@@ -17,7 +17,7 @@ export function checklist(d15, f, d, cfg = RULES) {
 
 export function story(asset, d15, d1h, d4h, result, extra = {}, cfg = RULES) {
   const f = features(d15, d1h, d4h, cfg), price = f.price, e50 = f.e50.at(-1), e200 = f.e200.at(-1), vw = f.vw.at(-1), r = f.r15.at(-1);
-  const out = {trend: '', levels: [], context: [], up: '', down: '', plan: '', checks: [], missing: []};
+  const out = {trend: '', levels: [], context: [], up: '', down: '', plan: '', checks: [], missing: [], idea: null};
   const d = f.up ? 1 : f.down ? -1 : 0;
 
   // Тренд
@@ -38,6 +38,7 @@ export function story(asset, d15, d1h, d4h, result, extra = {}, cfg = RULES) {
   if (Number.isFinite(f.volAvg) && f.volAvg > 0) out.context.push(`Объём последней 15м свечи: ${(f.last.v / f.volAvg).toFixed(1)}× от среднего за 20.`);
   if (extra.funding_pct != null) out.context.push(`Ставка финансирования ${(extra.funding_pct >= 0 ? '+' : '') + extra.funding_pct.toFixed(4)} %${Math.abs(extra.funding_pct) >= cfg.funding_warn_pct ? ': заметный перекос толпы' : ''}.`);
   if (extra.oi_change_pct != null) out.context.push(`Открытый интерес за 24 ч: ${signedPct(extra.oi_change_pct)}.`);
+  if (cfg.fee_pct) out.context.push(`Комиссия (оценка): ${cfg.fee_pct} % за сторону, вход и выход ≈ ${fmt(roundTripCost(price, cfg))} (${(cfg.fee_pct * 2).toFixed(2)} % цены). Учитывается в отношении прибыли к риску и в итогах сигналов.`);
 
   // Сценарии
   const r1 = f.resists[0], r2 = f.resists[1], s1 = f.supports.at(-1), s2 = f.supports.at(-2);
@@ -61,7 +62,11 @@ export function story(asset, d15, d1h, d4h, result, extra = {}, cfg = RULES) {
     // Где был бы вход: ближайшая зона по ходу тренда, которая не дальше цены.
     const zones = c.cands.filter(([, x]) => Number.isFinite(x) && (d > 0 ? x <= price : x >= price)).sort((a, b) => d > 0 ? b[1] - a[1] : a[1] - b[1]);
     const [zname, z] = zones[0] || [];
-    if (result.signal) out.plan = `Сетап есть: вход ${fmt(result.signal.entry)}, стоп ${fmt(result.signal.stop)}, цель ${fmt(result.signal.tp1)}.`;
+    if (result.signal) {
+      const s = result.signal;
+      out.plan = `Сетап есть: вход ${fmt(s.entry)}, стоп ${fmt(s.stop)}, цель ${fmt(s.tp1)}. Отношение прибыли к риску 1 : ${s.rr.toFixed(1)}, с учётом комиссии 1 : ${s.rr_net.toFixed(2)}.`;
+      out.idea = {dir: s.dir, entry: s.entry, stop: s.stop, target: s.tp1, signal: true, inZone: true};
+    }
     else if (!zones.length) out.plan = `Зоны для отката ${d > 0 ? 'ниже' : 'выше'} цены нет. Ждать отката к EMA50 (1ч) или уровню.`;
     else {
       // Цена уже в зоне: стоп как в правиле — за экстремумом 6 свечей плюс 0,5 ATR 15м.
@@ -71,11 +76,13 @@ export function story(asset, d15, d1h, d4h, result, extra = {}, cfg = RULES) {
       const stop = inZone ? (d > 0 ? Math.min(...six.map(b => b.l)) : Math.max(...six.map(b => b.h))) - d * 0.5 * f.a15 : z - d * 1.5 * f.a15;
       const risk = (entry - stop) * d, stopPct = risk / entry * 100;
       const barrier = (d > 0 ? f.resists : [...f.supports].sort((a, b) => b - a)).find(b => (b - entry) * d > 0);
-      const rr = barrier && risk > 0 ? (barrier - entry) * d / risk : null;
+      const cost = roundTripCost(entry, cfg), target = barrier ?? entry + d * 2 * risk;
+      const rr = barrier && risk > 0 ? netRR((barrier - entry) * d, risk, cost) : null;
+      if (risk > 0) out.idea = {dir: d, entry, stop, target, signal: false, inZone};
       const where = inZone ? `Цена уже у ${label(c.near[0][0])}. Если появится разворотная свеча 15м с объёмом или расхождением RSI, вход ≈ ${fmt(entry)}` :
         `Вход рассматривать после отката к ${label(zname)} ≈ ${fmt(z)} (${signedPct(pct(z, price))}) и разворотной свечи 15м с объёмом или расхождением RSI`;
       out.plan = risk <= 0 ? where + '. Стоп сейчас не строится.' : `${where}. Стоп ${d > 0 ? 'под минимумом' : 'над максимумом'} отката, ориентир ${fmt(stop)} (${stopPct.toFixed(2)} % от входа)${stopPct > cfg.max_stop_pct ? ': шире предела 2 %, сигнал не пройдёт' : ''}. ` +
-        (barrier ? `До ${d > 0 ? 'сопротивления' : 'поддержки'} ${fmt(barrier)} ≈ ${rr.toFixed(1)} R${rr < cfg.min_rr ? ': меньше 1,5 R, сигнал не пройдёт' : ''}.` : `Ближайших ${d > 0 ? 'сопротивлений' : 'поддержек'} нет, цель была бы 2 R.`) +
+        (barrier ? `До ${d > 0 ? 'сопротивления' : 'поддержки'} ${fmt(barrier)} ≈ ${rr.toFixed(1)} R с учётом комиссии${rr < cfg.min_rr ? ': меньше 1,5 R, сигнал не пройдёт' : ''}.` : `Ближайших ${d > 0 ? 'сопротивлений' : 'поддержек'} нет, цель была бы 2 R (${netRR(2 * risk, risk, cost).toFixed(2)} R с учётом комиссии).`) +
         (inZone ? '' : ' Точный стоп зависит от свечей отката.');
     }
   }

@@ -3,7 +3,8 @@ import {scanStep,initialScanState,guard,settle,pending,sliceAt,GUARD,PER_RUN} fr
 import {ASSETS} from '../src/markets.js';
 const ref=JSON.parse(readFileSync(new URL('./market-rules-reference.json',import.meta.url),'utf8'));
 const bars=rows=>rows.map(([t,o,h,l,c,v])=>({t,o,h,l,c,v}));
-const sigCase=ref.cases.find(c=>c.signal?.side==='ЛОНГ'),m={source:'bybit',d15:bars(sigCase.d15),d1h:bars(sigCase.d1h),d4h:bars(sigCase.d4h),extra:sigCase.extra};
+// Лонг, который проходит и с комиссией Bybit (у части эталонных сигналов стоп так узок, что комиссия съедает RR).
+const sigCase=ref.cases.find(c=>c.seed===108),m={source:'bybit',d15:bars(sigCase.d15),d1h:bars(sigCase.d1h),d4h:bars(sigCase.d4h),extra:sigCase.extra};
 test('scanner records rule signals once, rotates assets and never re-checks a candle',async()=>{
  const st=initialScanState(),open=[],now=m.d15.at(-1).t+900000+60000;
  const a=await scanStep(st,open,async()=>m,now);
@@ -23,7 +24,8 @@ test('risk guard: cooldown per asset, daily limit, open signals in one direction
 });
 test('outcome: stop checked first, then target, then time after 48 candles',()=>{
  const o={t:0,dir:1,entry:100,stop:99,tp1:102,rr:2};const bar=(i,l,h,c=100)=>({t:i*900000,o:100,h,l,c,v:1});
- assert.deepEqual(settle(o,[bar(1,98.5,102.5)]),{outcome:'стоп',r:-1,at:1800000});
+ assert.deepEqual(settle(o,[bar(1,98.5,102.5)]),{outcome:'стоп',r:-1,gross:-1,at:1800000});
+ const fee=settle({...o,cost:0.11},[bar(1,99.5,102.5)]);assert.equal(fee.gross,2);assert(Math.abs(fee.r-1.89)<1e-12,'commission is subtracted from the result');
  assert.equal(settle(o,[bar(1,99.5,102.5)]).outcome,'цель');assert.equal(settle(o,[bar(0,90,110),bar(1,99.5,101)]),null,'signal candle itself is ignored');
  const flat=Array.from({length:48},(_,i)=>bar(i+1,99.5,101,100.5));const r=settle(o,flat);assert.equal(r.outcome,'время');assert(Math.abs(r.r-0.5)<1e-12);
  const s={...o,dir:-1,entry:100,stop:101,tp1:98};assert.equal(settle(s,[bar(1,97.9,100.5)]).outcome,'цель');

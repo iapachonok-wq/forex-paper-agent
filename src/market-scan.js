@@ -1,7 +1,7 @@
 // Список сигналов по правилу: фоновая проверка активов по кругу, риск-страж и исходы.
 // Только записывает сигналы в журнал. Счёт, позиции и заявки валютного агента не трогает.
 import {ASSETS} from './markets.js';
-import {loadMarket} from './market-data.js';
+import {loadMarket, rulesFor} from './market-data.js';
 import {analyze} from './market-rules.js';
 
 // Риск-страж и закрытие по времени — как в crypto-signal-bot.
@@ -34,13 +34,15 @@ export function guard(sig, group, st, open, now) {
   return null;
 }
 // Исход открытого сигнала по свечам после него. Стоп проверяется первым, как в bot.py.
+// r — результат в рисках за вычетом комиссии за вход и выход, gross — без комиссии.
 export function settle(o, d15) {
-  const after = d15.filter(b => b.t > o.t), risk = Math.abs(o.entry - o.stop);
+  const after = d15.filter(b => b.t > o.t), risk = Math.abs(o.entry - o.stop), fee = (o.cost || 0) / risk;
+  const done = (outcome, gross, at) => ({outcome, r: gross - fee, gross, at});
   for (const b of after) {
-    if (o.dir > 0 ? b.l <= o.stop : b.h >= o.stop) return {outcome: 'стоп', r: -1, at: b.t + M15};
-    if (o.dir > 0 ? b.h >= o.tp1 : b.l <= o.tp1) return {outcome: 'цель', r: o.rr, at: b.t + M15};
+    if (o.dir > 0 ? b.l <= o.stop : b.h >= o.stop) return done('стоп', -1, b.t + M15);
+    if (o.dir > 0 ? b.h >= o.tp1 : b.l <= o.tp1) return done('цель', o.rr, b.t + M15);
   }
-  if (after.length >= GUARD.expire_bars) return {outcome: 'время', r: (after.at(-1).c - o.entry) * o.dir / risk, at: after.at(-1).t + M15};
+  if (after.length >= GUARD.expire_bars) return done('время', (after.at(-1).c - o.entry) * o.dir / risk, after.at(-1).t + M15);
   return null;
 }
 
@@ -59,13 +61,13 @@ export async function scanStep(st, open, loader, now) {
       let state = 'сетапа нет', why = '';
       for (const bar of pending(m.d15, st.seen[asset.id])) {
         const h = sliceAt(m, bar);
-        const {signal, reasons} = analyze(asset.binance || asset.id, h.d15, h.d1h, h.d4h, undefined, m.extra);
+        const {signal, reasons} = analyze(asset.binance || asset.id, h.d15, h.d1h, h.d4h, rulesFor(asset, m.source), m.extra);
         why = reasons.at(-1);
         st.seen[asset.id] = bar.t;
         if (!signal) { state = 'сетапа нет'; continue; }
         const at = bar.t + M15, block = guard({asset: asset.id, dir: signal.dir}, asset.group, st, open.filter(o => !o.closed), at);
         if (block) { state = 'отклонён стражем'; why = block; continue; }
-        const rec = {id: signal.id, asset: asset.id, name: asset.name, grp: asset.group, dir: signal.dir, t: bar.t, entry: signal.entry, stop: signal.stop, tp1: signal.tp1, rr: signal.rr, source: m.source, signal};
+        const rec = {id: signal.id, asset: asset.id, name: asset.name, grp: asset.group, dir: signal.dir, t: bar.t, entry: signal.entry, stop: signal.stop, tp1: signal.tp1, rr: signal.rr, cost: signal.cost, source: m.source, signal};
         inserts.push(rec); open.push(rec);
         st.last[asset.id] = at; st.count++; state = 'сигнал'; why = signal.side;
       }

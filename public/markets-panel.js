@@ -1,4 +1,6 @@
 // Вкладка «Рынки». Только чтение данных и анализ, сделок здесь нет.
+const SIDE_COLOR={long:'#00e676',short:'#ff1744'};
+const sideClass=dir=>dir>0?'sideLong':'sideShort';
 const SOURCE_NAMES={binance_futures:'Фьючерсы Binance (fapi.binance.com)',binance_spot:'Спот Binance (api.binance.com)',binance_spot_mirror:'Спот Binance, открытое зеркало (data-api.binance.vision)',yahoo:'Yahoo Finance',kucoin:'KuCoin',kraken:'Kraken',coinbase:'Coinbase Exchange',okx:'OKX',bybit:'Bybit',gate:'Gate',mexc:'MEXC'};
 function ageText(ms){if(!ms)return '—';const m=Math.round((Date.now()-ms)/60000);return m<1?'только что':m<120?m+' мин назад':Math.round(m/60)+' ч назад';}
 // Тот же формат, что в разборе и в bot.py: пробел между тысячами, точка в дробной части.
@@ -14,8 +16,8 @@ async function loadMarkets(){
   for(const a of assets){
    byId('marketsStatus').textContent='Загружаем '+a.name+' ('+(done+1)+' из '+assets.length+')…';const cells=rows[a.id].children;
    try{const r=await api('markets/analysis?id='+encodeURIComponent(a.id));const s=r.signal;
-    cells[1].textContent=fmtPrice(r.price);cells[2].textContent=s?'сигнал · '+s.side:'сетапа нет';
-    cells[3].textContent=s?`вход ${fmtPrice(s.entry)} · стоп ${fmtPrice(s.stop)} (${s.risk_pct_price.toFixed(2)} %) · цель ${fmtPrice(s.tp1)} (1 : ${s.rr.toFixed(1)})`+(s.warnings.length?' · '+s.warnings.join('; '):''):r.reasons.at(-1);
+    cells[1].textContent=fmtPrice(r.price);cells[2].textContent=s?'сигнал · '+s.side:'сетапа нет';if(s)cells[2].className=sideClass(s.dir)+' sideText';
+    cells[3].textContent=s?`вход ${fmtPrice(s.entry)} · стоп ${fmtPrice(s.stop)} (${s.risk_pct_price.toFixed(2)} %) · цель ${fmtPrice(s.tp1)} (1 : ${s.rr.toFixed(1)}, с комиссией 1 : ${s.rr_net.toFixed(2)})`+(s.warnings.length?' · '+s.warnings.join('; '):''):r.reasons.at(-1);
     cells[4].textContent=r.sourceName+(r.volume?'':' · без объёма')+' · свеча до '+localTime(r.closedAt)+(r.stale?' · данные старые, рынок закрыт или источник отстаёт':'')+(r.fallbacks.length?' · запасной источник':'');
     if(s){signals++;rows[a.id].className='signalRow';}
    }catch(e){cells[2].textContent='нет данных';cells[3].textContent=e.message;}
@@ -38,8 +40,9 @@ async function loadSignals(){
   if(!d.signals.length)list.append(node('p','Сигналов пока нет. Сюда попадают только сетапы, где сошлись тренд, зона и сигнал, и которые пропустил риск-страж.','muted'));
   for(const s of d.signals){const g=s.signal,card=node('article',undefined,'signalCard'),head=node('div',undefined,'assetHead');
    const open=node('button',s.name||s.asset,'linkButton');open.type='button';open.onclick=()=>openAsset(s.asset);
-   head.append(open,node('span',g.side,'tag tagSignal'),node('span',s.status+(s.r!=null?' '+(s.r>=0?'+':'')+s.r.toFixed(1)+' R':''),'tag'));card.append(head);
-   card.append(node('p',`Свеча ${localTime(s.t)} (Нью-Йорк) · вход ${fmtPrice(s.entry)} · стоп ${fmtPrice(s.stop)} (${g.risk_pct_price.toFixed(2)} %) · цель ${fmtPrice(s.tp1)} (1 : ${s.rr.toFixed(1)}) · цель 2 ${fmtPrice(g.tp2)}`));
+   head.append(open,node('span',g.side,'tag '+sideClass(g.dir)+'Tag'),node('span',s.status+(s.r!=null?' '+(s.r>=0?'+':'')+s.r.toFixed(2)+' R с комиссией':''),'tag'));card.append(head);
+   card.append(node('div','Вход '+g.side+' '+fmtPrice(s.entry),'entryBig '+sideClass(g.dir)));
+   card.append(node('p',`Свеча ${localTime(s.t)} (Нью-Йорк) · стоп ${fmtPrice(s.stop)} (${g.risk_pct_price.toFixed(2)} %) · цель ${fmtPrice(s.tp1)} (1 : ${s.rr.toFixed(1)}${g.rr_net!=null?', с комиссией 1 : '+g.rr_net.toFixed(2):''}) · цель 2 ${fmtPrice(g.tp2)}`));
    const ul=node('ul');for(const t of [...g.reasons,...g.warnings.map(w=>'⚠ '+w)])ul.append(node('li',t));card.append(ul);
    card.append(node('small','Данные: '+(SOURCE_NAMES[s.source]||s.source||'—')+(s.closedAt?' · закрыт '+localTime(s.closedAt):'')));list.append(card);}
  }catch(e){byId('signalsStatus').textContent='Не удалось загрузить сигналы: '+e.message;}
@@ -59,12 +62,14 @@ async function openAsset(id){
 }
 function renderAsset(r){
  const host=byId('marketDetail'),s=r.signal,st=r.story;host.replaceChildren();
- const head=node('div',undefined,'assetHead');head.append(node('h2',r.name+' · 15 минут'),node('span',s?'сигнал · '+s.side:'сетапа нет',s?'tag tagSignal':'tag'));host.append(head);
- host.append(node('p','Данные: '+r.sourceName+(r.volume?'':' · без объёма')+' · последняя закрытая свеча до '+localTime(r.closedAt)+' (Нью-Йорк)'+(r.stale?' · данные старые: рынок закрыт или источник отстаёт':''),'muted'));
+ const head=node('div',undefined,'assetHead');head.append(node('h2',r.name+' · 15 минут'),node('span',s?'сигнал · '+s.side:'сетапа нет',s?'tag '+sideClass(s.dir)+'Tag':'tag'));host.append(head);
+ const idea=st.idea;
+ if(idea){const box=node('div',undefined,'entryBanner '+sideClass(idea.dir));box.append(node('div',(idea.signal?'Вход по сигналу: ':'Вход был бы: ')+(idea.dir>0?'ЛОНГ':'ШОРТ')+' ≈ '+fmtPrice(idea.entry),'entryBig'),node('div',`стоп ${fmtPrice(idea.stop)} · цель ${fmtPrice(idea.target)}`+(idea.signal?'':' · ориентир, сетапа пока нет'),'entrySmall'));host.append(box);}
+ host.append(node('p','Данные: '+r.sourceName+(r.volume?'':' · без объёма')+(r.fee_pct?' · комиссия '+r.fee_pct+' % за сторону (оценка)':'')+' · последняя закрытая свеча до '+localTime(r.closedAt)+' (Нью-Йорк)'+(r.stale?' · данные старые: рынок закрыт или источник отстаёт':''),'muted'));
  const scroll=node('div',undefined,'chartScroll');scroll.append(drawMarketChart(r));host.append(scroll);
  host.append(node('p','Оранжевая — EMA 50 (1ч), синяя — EMA 200 (1ч), фиолетовый пунктир — VWAP за сутки, серые точки — уровни. Внизу объём со средней за 20 и RSI 14.','muted'));
  const info=node('p','Наведите на свечу или коснитесь её, чтобы увидеть цены.','muted');info.id='marketBarInfo';host.append(info);
- if(s){const box=node('article',undefined,'marketBanner');box.append(node('h3','Сетап по правилу: '+s.side));const list=node('ul');for(const t of [`Вход ${fmtPrice(s.entry)}`,`Стоп ${fmtPrice(s.stop)} (${s.risk_pct_price.toFixed(2)} %)`,`Цель 1 ${fmtPrice(s.tp1)} (1 : ${s.rr.toFixed(1)})`,`Цель 2 ${fmtPrice(s.tp2)} (1 : 3)`,`Размер при риске $${s.risk_usd} учебного счёта $1000: ${s.qty.toPrecision(4)}`,...s.reasons,...s.warnings.map(w=>'⚠ '+w)])list.append(node('li',t));box.append(list,node('small','Отмена: 15м свеча закрылась за стопом. Это разбор по правилам, не совет и не сделка: на демо-счёте ничего не исполняется.'));host.append(box);}
+ if(s){const box=node('article',undefined,'marketBanner');box.append(node('h3','Сетап по правилу: '+s.side));const list=node('ul');for(const t of [`Вход ${fmtPrice(s.entry)}`,`Стоп ${fmtPrice(s.stop)} (${s.risk_pct_price.toFixed(2)} %)`,`Цель 1 ${fmtPrice(s.tp1)} (1 : ${s.rr.toFixed(1)}, с комиссией 1 : ${s.rr_net.toFixed(2)})`,`Комиссия за вход и выход ≈ ${fmtPrice(s.cost)} (${s.cost_r.toFixed(2)} R)`,`Цель 2 ${fmtPrice(s.tp2)} (1 : 3)`,`Размер при риске $${s.risk_usd} учебного счёта $1000: ${s.qty.toPrecision(4)}`,...s.reasons,...s.warnings.map(w=>'⚠ '+w)])list.append(node('li',t));box.append(list,node('small','Отмена: 15м свеча закрылась за стопом. Это разбор по правилам, не совет и не сделка: на демо-счёте ничего не исполняется.'));host.append(box);}
  const sec=(title,items)=>{host.append(node('h3',title));const ul=node('ul');for(const t of items)ul.append(node('li',t));host.append(ul);};
  sec('Тренд',[st.trend]);
  sec('Ближайшие уровни',st.levels.length?st.levels.map(l=>`${l.kind} ${fmtPrice(l.price)} (${l.pct>=0?'+':''}${l.pct.toFixed(2)} %)`):['Уровней по часовому графику за 240 свечей не найдено.']);
@@ -80,7 +85,7 @@ function drawMarketChart(r){
  const left=10,right=96,step=9,width=Math.max(760,left+n*step+right),height=480,P=[20,300],V=[318,378],R=[396,466];
  const el=(tag,a,text)=>{const e=document.createElementNS(ns,tag);for(const [k,v] of Object.entries(a))e.setAttribute(k,v);if(text!==undefined)e.textContent=text;return e;};
  const svg=el('svg',{viewBox:`0 0 ${width} ${height}`,width,height,role:'img','aria-label':'График '+r.name+', свечи 15 минут'});
- let lo=Math.min(...bars.map(b=>b[3])),hi=Math.max(...bars.map(b=>b[2]));if(s){lo=Math.min(lo,s.stop,s.tp1,s.tp2);hi=Math.max(hi,s.stop,s.tp1,s.tp2);}const pad=(hi-lo)*.06||hi*.001;lo-=pad;hi+=pad;
+ let lo=Math.min(...bars.map(b=>b[3])),hi=Math.max(...bars.map(b=>b[2]));const marks=[...(s?[s.stop,s.tp1,s.tp2]:[]),...(r.story?.idea?[r.story.idea.entry,r.story.idea.stop,r.story.idea.target]:[])];if(marks.length){lo=Math.min(lo,...marks);hi=Math.max(hi,...marks);}const pad=(hi-lo)*.06||hi*.001;lo-=pad;hi+=pad;
  const x=i=>left+(i+.5)*step,y=p=>P[1]-(p-lo)/(hi-lo)*(P[1]-P[0]),plotRight=left+n*step;
  const clip=el('clipPath',{id:'priceClip'});clip.append(el('rect',{x:0,y:P[0],width:plotRight+30,height:P[1]-P[0]}));svg.append(clip);
  const g=el('g',{'clip-path':'url(#priceClip)'});svg.append(g);
@@ -100,8 +105,16 @@ function drawMarketChart(r){
  });
  let dv='',pen=false;c.volAvg.forEach((v,i)=>{if(v==null){pen=false;return;}dv+=(pen?'L':'M')+x(i).toFixed(1)+' '+vy(v).toFixed(1);pen=true;});if(dv)svg.append(el('path',{d:dv,fill:'none',stroke:'#f7a600','stroke-width':1}));
  let dr='';pen=false;c.rsi.forEach((v,i)=>{if(v==null){pen=false;return;}dr+=(pen?'L':'M')+x(i).toFixed(1)+' '+ry(v).toFixed(1);pen=true;});if(dr)svg.append(el('path',{d:dr,fill:'none',stroke:'#c3a0ff','stroke-width':1.3}));
- if(s){const x0=x(n-1),x1=plotRight+4;const band=(a,b,col)=>g.append(el('rect',{x:x0,y:Math.min(y(a),y(b)),width:x1-x0,height:Math.abs(y(a)-y(b)),fill:col,opacity:.18}));band(s.entry,s.tp1,'#26a69a');band(s.entry,s.stop,'#ef5350');
-  for(const [v,name,col] of [[s.entry,'ВХОД','#e8eef0'],[s.stop,'СТОП','#ef5350'],[s.tp1,'ЦЕЛЬ 1','#26a69a'],[s.tp2,'ЦЕЛЬ 2','#26a69a']]){svg.append(el('line',{x1:x0-40,x2:x1,y1:y(v),y2:y(v),stroke:col,'stroke-width':1.4,'stroke-dasharray':name==='ЦЕЛЬ 2'?'5 4':'none'}),el('text',{x:x1+2,y:y(v)+4,fill:col,'font-size':10,'font-weight':700},name+' '+fmtPrice(v)));}}
+ // Вход: ярко-зелёный для лонга, ярко-красный для шорта, крупной подписью. Стоп и цель — спокойными цветами.
+ const idea=r.story?.idea;
+ if(idea){const col=idea.dir>0?SIDE_COLOR.long:SIDE_COLOR.short,side=idea.dir>0?'ЛОНГ':'ШОРТ',x0=Math.max(left,x(n-1)-60),x1=plotRight+4;
+  const band=(a,b,c,op)=>g.append(el('rect',{x:x0,y:Math.min(y(a),y(b)),width:x1-x0,height:Math.abs(y(a)-y(b)),fill:c,opacity:op}));band(idea.entry,idea.target,col,.16);band(idea.entry,idea.stop,'#9e9e9e',.16);
+  svg.append(el('line',{x1:x0,x2:x1,y1:y(idea.stop),y2:y(idea.stop),stroke:'#ffab40','stroke-width':1.4}),el('text',{x:x1+2,y:y(idea.stop)+4,fill:'#ffab40','font-size':11,'font-weight':700},'СТОП '+fmtPrice(idea.stop)));
+  svg.append(el('line',{x1:x0,x2:x1,y1:y(idea.target),y2:y(idea.target),stroke:'#40c4ff','stroke-width':1.4,'stroke-dasharray':'6 4'}),el('text',{x:x1+2,y:y(idea.target)+4,fill:'#40c4ff','font-size':11,'font-weight':700},'ЦЕЛЬ '+fmtPrice(idea.target)));
+  if(s)svg.append(el('line',{x1:x0,x2:x1,y1:y(s.tp2),y2:y(s.tp2),stroke:'#40c4ff','stroke-width':1,'stroke-dasharray':'2 4'}),el('text',{x:x1+2,y:y(s.tp2)+4,fill:'#40c4ff','font-size':10},'ЦЕЛЬ 2 '+fmtPrice(s.tp2)));
+  svg.append(el('line',{x1:left,x2:x1,y1:y(idea.entry),y2:y(idea.entry),stroke:col,'stroke-width':3,'stroke-dasharray':idea.signal?'none':'10 5'}));
+  const tag=(idea.signal?'ВХОД ':'ВХОД БЫЛ БЫ ')+side+' '+fmtPrice(idea.entry),ty=y(idea.entry)+(idea.dir>0?-8:20);
+  svg.append(el('text',{x:left+8,y:ty,fill:col,'font-size':18,'font-weight':800,stroke:'#101c19','stroke-width':4,'paint-order':'stroke'},tag));}
  return svg;
 }
 window.addEventListener('hashchange',()=>{if(location.hash==='#markets'&&!marketsLoaded)loadMarkets();});

@@ -1,6 +1,7 @@
 // Загрузка свечей 15м / 1ч / 4ч для раздела «Рынки» с запасными источниками.
-import {ASSETS, CHAINS, SOURCE_LABELS, BYBIT, GATE, MEXC, KRAKEN, YAHOO} from './markets.js';
-import {analyze, features} from './market-rules.js';
+import {ASSETS, CHAINS, SOURCE_LABELS, BYBIT, GATE, MEXC, KRAKEN, YAHOO, feeFor} from './markets.js';
+import {analyze, features, RULES} from './market-rules.js';
+export const rulesFor = (asset, source) => ({...RULES, fee_pct: feeFor(asset, source)});
 import {story, chartData} from './market-story.js';
 
 const SEC = {'15m': 900, '1h': 3600, '4h': 14400};
@@ -96,19 +97,19 @@ export function findAsset(id) { return ASSETS.find(a => a.id === id); }
 
 // Анализ одного актива. Только чтение данных и расчёт, без записи и без сделок.
 export async function analyzeAsset(asset, request = fetch, now = Date.now(), detail = false) {
-  const m = await loadMarket(asset, request, now);
-  const result = analyze(asset.binance || asset.id, m.d15, m.d1h, m.d4h, undefined, m.extra);
+  const m = await loadMarket(asset, request, now), cfg = rulesFor(asset, m.source);
+  const result = analyze(asset.binance || asset.id, m.d15, m.d1h, m.d4h, cfg, m.extra);
   const last = m.d15.at(-1), closedAt = last.t + 900000;
   const volume = m.d15.some(b => b.v > 0);
   const out = {
     id: asset.id, name: asset.name, group: asset.group, source: m.source,
     sourceName: SOURCE_LABELS[m.source] + (m.source === 'yahoo' ? ' · ' + (asset.note || asset.yahoo[0]) : ''),
     volume, price: last.c, closedAt, stale: now - closedAt > 3600000,
-    signal: result.signal, reasons: result.reasons, extra: m.extra, fallbacks: m.attempts, checkedAt: now,
+    signal: result.signal, reasons: result.reasons, extra: m.extra, fallbacks: m.attempts, checkedAt: now, fee_pct: cfg.fee_pct,
   };
   if (detail) {
-    out.story = story(asset, m.d15, m.d1h, m.d4h, result, m.extra);
-    out.chart = chartData(m.d15, m.d1h, features(m.d15, m.d1h, m.d4h));
+    out.story = story(asset, m.d15, m.d1h, m.d4h, result, m.extra, cfg);
+    out.chart = chartData(m.d15, m.d1h, features(m.d15, m.d1h, m.d4h, cfg));
   }
   return out;
 }

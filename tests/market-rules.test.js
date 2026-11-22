@@ -22,5 +22,11 @@ test('analyze() gives the same verdict, reasons and numbers as bot.py',()=>{
  }
  for(const k of ['ЛОНГ','ШОРТ','стоп','цена','тренд','нет'])assert(kinds.has(k),'нет случая '+k);
 });
+test('commission lowers net RR, can reject a signal, and shrinks position size',()=>{
+ const c=ref.cases.find(x=>x.signal),args=['TESTUSDT',bars(c.d15),bars(c.d1h),bars(c.d4h)];
+ const base=analyze(...args,RULES,c.extra).signal,fee={...RULES,fee_pct:0.055},s=analyze(...args,fee,c.extra).signal;
+ if(s){assert(s.rr_net<s.rr);assert(Math.abs(s.cost-s.entry*0.0011)<1e-9);assert(s.qty<base.qty);assert.equal(s.stop,base.stop);}
+ const huge=analyze(...args,{...RULES,fee_pct:5},c.extra);assert.equal(huge.signal,null);assert.match(huge.reasons.at(-1),/^с учётом комиссии 5\.000 % за сторону/);
+});
 test('short history is rejected',()=>{const b=[{t:0,o:1,h:1,l:1,c:1,v:1}];assert.deepEqual(analyze('X',b,b,b).reasons,['мало истории']);});
 test('price format matches Python fmt',()=>{assert.equal(fmt(105281.64),'105 281.6');assert.equal(fmt(2.5),'2.500');assert.equal(fmt(0.123456),'0.12346');});
