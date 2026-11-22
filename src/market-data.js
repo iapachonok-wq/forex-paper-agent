@@ -118,8 +118,10 @@ export async function analyzeAsset(asset, request = fetch, now = Date.now(), det
     volume, price: last.c, closedAt, stale: now - closedAt > 3600000,
     signal: result.signal, reasons: result.reasons, extra: m.extra, fallbacks: m.attempts, checkedAt: now, fee_pct: cfg.fee_pct,
   };
+  const st = story(asset, m.d15, m.d1h, m.d4h, result, m.extra, cfg);
+  out.score = st.score; out.scoreDir = st.scoreDir;
   if (detail) {
-    out.story = story(asset, m.d15, m.d1h, m.d4h, result, m.extra, cfg);
+    out.story = st;
     out.chart = chartData(m.d15, m.d1h, features(m.d15, m.d1h, m.d4h, cfg));
   }
   return out;

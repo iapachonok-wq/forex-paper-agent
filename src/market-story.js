@@ -48,7 +48,12 @@ export function story(asset, d15, d1h, d4h, result, extra = {}, cfg = RULES) {
   if (d < 0) out.up += ' Это против тренда: лонг правило не рассматривает.';
 
   // Что именно не выполнено
+  // Готовность к сетапу: сколько условий правила выполнено, в процентах. Это не вероятность прибыли.
+  const parts = [];
+  const part = (name, got, max) => parts.push({name, got: Math.round(Math.max(0, Math.min(max, got)) * 10) / 10, max});
   if (!d) {
+    const ups = [price > e200, e50 > e200, c4 > e4].filter(Boolean).length, best = Math.max(ups, 3 - ups);
+    part('Тренд 1ч и 4ч', best === 2 ? 15 : 0, 30);
     out.checks.push({ok: false, text: 'Тренд: 1ч и 4ч не согласны.'});
     out.missing.push('Согласия трендов: цена и EMA50 по одну сторону от EMA200 на 1ч, и 4ч в ту же сторону.');
     out.plan = 'Сетапа нет, пока нет тренда. Вход и стоп не рассчитываются.';
@@ -59,6 +64,15 @@ export function story(asset, d15, d1h, d4h, result, extra = {}, cfg = RULES) {
     out.checks.push({ok: c.candle, text: c.candle ? 'Разворотная свеча 15м есть.' : `Разворотной свечи нет: нужна ${d > 0 ? 'зелёная свеча с закрытием выше максимума' : 'красная свеча с закрытием ниже минимума'} предыдущей.`});
     out.checks.push({ok: c.volOk || c.divOk, text: c.volOk ? `Объём ${c.volRatio.toFixed(1)}× от среднего (нужно больше ${cfg.volume_mult}×).` : c.divOk ? 'Расхождение RSI с ценой есть.' : `Нет подтверждения: объём ${Number.isFinite(c.volRatio) ? c.volRatio.toFixed(1) + '×' : 'нет данных'} при нужных ${cfg.volume_mult}×, расхождения RSI нет.`});
     for (const x of out.checks) if (!x.ok) out.missing.push(x.text);
+    part('Тренд 1ч и 4ч', 30, 30);
+    // Зона: полный балл в зоне, дальше линейно убывает до нуля на расстоянии трёх зон.
+    const side = c.cands.filter(([, x]) => Number.isFinite(x) && (d > 0 ? x <= price : x >= price)).map(([, x]) => Math.abs(c.touch - x));
+    const dist = side.length ? Math.min(...side) : Infinity;
+    part('Откат к зоне', c.near.length ? 25 : 25 * (1 - (dist - f.zone) / (2 * f.zone)), 25);
+    const colored = d > 0 ? f.last.c > f.last.o : f.last.c < f.last.o;
+    part('Разворотная свеча 15м', c.candle ? 20 : colored ? 8 : 0, 20);
+    part('Объём или расхождение RSI', c.volOk || c.divOk ? 15 : Number.isFinite(c.volRatio) ? 12 * c.volRatio / cfg.volume_mult : 0, 15);
+    out._c = c;
     // Где был бы вход: ближайшая зона по ходу тренда, которая не дальше цены.
     const zones = c.cands.filter(([, x]) => Number.isFinite(x) && (d > 0 ? x <= price : x >= price)).sort((a, b) => d > 0 ? b[1] - a[1] : a[1] - b[1]);
     const [zname, z] = zones[0] || [];
@@ -66,6 +80,7 @@ export function story(asset, d15, d1h, d4h, result, extra = {}, cfg = RULES) {
       const s = result.signal;
       out.plan = `Сетап есть: вход ${fmt(s.entry)}, стоп ${fmt(s.stop)}, цель ${fmt(s.tp1)}. Отношение прибыли к риску 1 : ${s.rr.toFixed(1)}, с учётом комиссии 1 : ${s.rr_net.toFixed(2)}.`;
       out.idea = {dir: s.dir, entry: s.entry, stop: s.stop, target: s.tp1, signal: true, inZone: true};
+      part('Стоп и отношение прибыли к риску', 10, 10);
     }
     else if (!zones.length) out.plan = `Зоны для отката ${d > 0 ? 'ниже' : 'выше'} цены нет. Ждать отката к EMA50 (1ч) или уровню.`;
     else {
@@ -79,6 +94,8 @@ export function story(asset, d15, d1h, d4h, result, extra = {}, cfg = RULES) {
       const cost = roundTripCost(entry, cfg), target = barrier ?? entry + d * 2 * risk;
       const rr = barrier && risk > 0 ? netRR((barrier - entry) * d, risk, cost) : null;
       if (risk > 0) out.idea = {dir: d, entry, stop, target, signal: false, inZone};
+      const rrAny = risk > 0 ? (rr ?? netRR(2 * risk, risk, cost)) : 0;
+      part('Стоп и отношение прибыли к риску', risk > 0 ? (stopPct <= cfg.max_stop_pct ? 5 : 0) + (rrAny >= cfg.min_rr ? 5 : 0) : 0, 10);
       const where = inZone ? `Цена уже у ${label(c.near[0][0])}. Если появится разворотная свеча 15м с объёмом или расхождением RSI, вход ≈ ${fmt(entry)}` :
         `Вход рассматривать после отката к ${label(zname)} ≈ ${fmt(z)} (${signedPct(pct(z, price))}) и разворотной свечи 15м с объёмом или расхождением RSI`;
       out.plan = risk <= 0 ? where + '. Стоп сейчас не строится.' : `${where}. Стоп ${d > 0 ? 'под минимумом' : 'над максимумом'} отката, ориентир ${fmt(stop)} (${stopPct.toFixed(2)} % от входа)${stopPct > cfg.max_stop_pct ? ': шире предела 2 %, сигнал не пройдёт' : ''}. ` +
@@ -87,6 +104,12 @@ export function story(asset, d15, d1h, d4h, result, extra = {}, cfg = RULES) {
     }
   }
   if (!d15.some(b => b.v > 0)) out.missing.push('У источника нет объёма: условие по объёму не выполнится, остаётся расхождение RSI.');
+  delete out._c;
+  // Сигнал по правилу — всегда 100 %; без сигнала — не выше 95 %, даже если все части близки.
+  const sum = parts.reduce((a, p) => a + p.got, 0);
+  out.score = result.signal ? 100 : Math.min(95, Math.round(sum));
+  out.scoreParts = parts;
+  out.scoreDir = d || null;
   return out;
 }
 

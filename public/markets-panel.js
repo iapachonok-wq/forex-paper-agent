@@ -6,24 +6,31 @@ function ageText(ms){if(!ms)return '—';const m=Math.round((Date.now()-ms)/6000
 // Тот же формат, что в разборе и в bot.py: пробел между тысячами, точка в дробной части.
 const fmtPrice=x=>!Number.isFinite(x)?'—':x>=1000?x.toFixed(1).replace(/\B(?=(\d{3})+(?!\d))/g,' '):x>=1?x.toFixed(3):x.toFixed(5);
 let marketsLoaded=false,marketsBusy=false;
+// Полоска готовности: цвет по направлению тренда (зелёный — лонг, красный — шорт, серый — тренда нет).
+function scoreMeter(score,dir,wide=false){const box=node('div',undefined,'meter'+(wide?' meterWide':'')),bar=node('span',undefined,dir>0?'meterLong':dir<0?'meterShort':'meterNone');bar.style.width=Math.max(0,Math.min(100,score))+'%';box.append(bar);const wrap=node('div',undefined,'meterWrap');wrap.append(box,node('b',score+' %'+(dir?(dir>0?' · лонг':' · шорт'):''),dir>0?'sideLong':dir<0?'sideShort':''));return wrap;}
 async function loadMarkets(){
  if(marketsBusy||byId('app').hidden)return;marketsBusy=true;const b=byId('marketsRefresh');b.disabled=true;
  try{
-  const {assets}=await api('markets/assets');const table=node('table'),head=node('tr');for(const h of ['Актив','Цена','Состояние','Причина или сетап','Данные'])head.append(node('th',h));table.append(head);byId('marketsBoard').replaceChildren(table);
-  const rows={};for(const a of assets){const tr=node('tr'),name=node('td'),open=node('button',a.name,'linkButton');open.type='button';open.title='Открыть график и разбор';open.onclick=()=>openAsset(a.id);name.append(open);tr.append(name,node('td','…'),node('td','ждёт'),node('td',''),node('td',''));rows[a.id]=tr;table.append(tr);}
+  const {assets}=await api('markets/assets');const table=node('table'),head=node('tr');for(const h of ['Актив','Готовность','Цена','Состояние','Причина или сетап','Данные'])head.append(node('th',h));table.append(head);byId('marketsBoard').replaceChildren(table);
+  const rows={},scores={};for(const a of assets){const tr=node('tr'),name=node('td'),open=node('button',a.name,'linkButton');open.type='button';open.title='Открыть график и разбор';open.onclick=()=>openAsset(a.id);name.append(open);tr.append(name,node('td','…'),node('td','…'),node('td','ждёт'),node('td',''),node('td',''));rows[a.id]=tr;table.append(tr);}
+  // Чем выше готовность, тем выше строка. Неизвестные — внизу, в исходном порядке.
+  const resort=()=>{const order=[...assets].sort((x,y)=>(scores[y.id]??-1)-(scores[x.id]??-1));for(const a of order)table.append(rows[a.id]);};
   let done=0,signals=0;
   // По одному активу за запрос: так каждый вызов укладывается в лимит процессора Cloudflare.
   for(const a of assets){
-   byId('marketsStatus').textContent='Загружаем '+a.name+' ('+(done+1)+' из '+assets.length+')…';const cells=rows[a.id].children;
+   byId('marketsStatus').textContent='Загружаем '+a.name+' ('+(done+1)+' из '+assets.length+')…';const tds=rows[a.id].children,cells=[tds[0],tds[2],tds[3],tds[4],tds[5]];
    try{const r=await api('markets/analysis?id='+encodeURIComponent(a.id));const s=r.signal;
+    scores[a.id]=r.score;tds[1].replaceChildren(scoreMeter(r.score,r.scoreDir));resort();
     cells[1].textContent=fmtPrice(r.price);cells[2].textContent=s?'сигнал · '+s.side:'сетапа нет';if(s)cells[2].className=sideClass(s.dir)+' sideText';
     cells[3].textContent=s?`вход ${fmtPrice(s.entry)} · стоп ${fmtPrice(s.stop)} (${s.risk_pct_price.toFixed(2)} %) · цель ${fmtPrice(s.tp1)} (1 : ${s.rr.toFixed(1)}, с комиссией 1 : ${s.rr_net.toFixed(2)})`+(s.warnings.length?' · '+s.warnings.join('; '):''):r.reasons.at(-1);
     cells[4].textContent=r.sourceName+(r.volume?'':' · без объёма')+' · свеча до '+localTime(r.closedAt)+(r.stale?' · данные старые, рынок закрыт или источник отстаёт':'')+(r.fallbacks.length?' · запасной источник':'');
     if(s){signals++;rows[a.id].className='signalRow';}
-   }catch(e){cells[2].textContent='нет данных';cells[3].textContent=e.message;}
+   }catch(e){const c=rows[a.id].children;c[1].textContent='—';c[3].textContent='нет данных';c[4].textContent=e.message;}
    done++;
   }
-  marketsLoaded=true;byId('marketsStatus').textContent='Обновлено: '+localTime(Date.now())+' (Нью-Йорк). Сигналов: '+signals+'. Время свечей — Нью-Йорк.';
+  marketsLoaded=true;byId('marketsStatus').textContent='Обновлено: '+localTime(Date.now())+' (Нью-Йорк). Сигналов: '+signals+'. Готовность — доля выполненных условий правила, не вероятность прибыли. Время свечей — Нью-Йорк.';
+  // Открытая карточка актива перерисовывается на свежих данных при каждом обновлении.
+  if(currentAsset&&!byId('marketDetail').hidden)openAsset(currentAsset,true);
  }catch(e){byId('marketsStatus').textContent='Не удалось загрузить: '+e.message;}finally{marketsBusy=false;b.disabled=false;}
 }
 byId('marketsRefresh').onclick=loadMarkets;
@@ -55,8 +62,11 @@ setInterval(()=>{if(!document.hidden&&location.hash==='#markets'&&!byId('app').h
 
 // Карточка актива: график 15м и разбор словами. Всё считает код, без AI.
 let detailRequest=0;
-async function openAsset(id){
- const req=++detailRequest,host=byId('marketDetail');host.hidden=false;host.replaceChildren(node('p','Загружаем график и разбор…','muted'));host.scrollIntoView({behavior:'smooth',block:'start'});
+let currentAsset=null;
+async function openAsset(id,quiet=false){
+ const req=++detailRequest,host=byId('marketDetail');currentAsset=id;host.hidden=false;
+ // При тихом обновлении старый график остаётся на месте, пока не придёт новый.
+ if(!quiet){host.replaceChildren(node('p','Загружаем график и разбор…','muted'));host.scrollIntoView({behavior:'smooth',block:'start'});}
  try{const r=await api('markets/analysis?id='+encodeURIComponent(id)+'&detail=1');if(req!==detailRequest)return;renderAsset(r);}
  catch(e){if(req===detailRequest)host.replaceChildren(node('p','Не удалось загрузить: '+e.message));}
 }
@@ -71,6 +81,8 @@ function renderAsset(r){
  const info=node('p','Наведите на свечу или коснитесь её, чтобы увидеть цены.','muted');info.id='marketBarInfo';host.append(info);
  if(s){const box=node('article',undefined,'marketBanner');box.append(node('h3','Сетап по правилу: '+s.side));const list=node('ul');for(const t of [`Вход ${fmtPrice(s.entry)}`,`Стоп ${fmtPrice(s.stop)} (${s.risk_pct_price.toFixed(2)} %)`,`Цель 1 ${fmtPrice(s.tp1)} (1 : ${s.rr.toFixed(1)}, с комиссией 1 : ${s.rr_net.toFixed(2)})`,`Комиссия за вход и выход ≈ ${fmtPrice(s.cost)} (${s.cost_r.toFixed(2)} R)`,`Цель 2 ${fmtPrice(s.tp2)} (1 : 3)`,`Размер при риске $${s.risk_usd} учебного счёта $1000: ${s.qty.toPrecision(4)}`,...s.reasons,...s.warnings.map(w=>'⚠ '+w)])list.append(node('li',t));box.append(list,node('small','Отмена: 15м свеча закрылась за стопом. Это разбор по правилам, не совет и не сделка: на демо-счёте ничего не исполняется.'));host.append(box);}
  const sec=(title,items)=>{host.append(node('h3',title));const ul=node('ul');for(const t of items)ul.append(node('li',t));host.append(ul);};
+ const sc=node('div',undefined,'scoreBox');sc.append(node('h3','Готовность к сетапу: '+st.score+' %'),scoreMeter(st.score,st.scoreDir,true));const ul=node('ul');for(const p of st.scoreParts)ul.append(node('li',`${p.name}: ${p.got} из ${p.max}`));sc.append(ul,node('small','Сколько условий правила уже выполнено. Сигнал по правилу — 100 %. Это не вероятность прибыли: правило ещё не проверено на истории. Реальную долю сигналов в плюс покажет журнал после 30 закрытых сигналов.'));host.append(sc);
+ host.append(node('p','Обновлено: '+localTime(Date.now())+' (Нью-Йорк). Карточка обновляется вместе с кнопкой «Обновить все активы».','muted'));
  sec('Тренд',[st.trend]);
  sec('Ближайшие уровни',st.levels.length?st.levels.map(l=>`${l.kind} ${fmtPrice(l.price)} (${l.pct>=0?'+':''}${l.pct.toFixed(2)} %)`):['Уровней по часовому графику за 240 свечей не найдено.']);
  sec('Фон',st.context);

@@ -15,6 +15,11 @@ test('checklist agrees with the rule verdict for every reference case',()=>{
   if(last.startsWith('свеча есть'))assert.deepEqual(st.checks.map(x=>x.ok),[true,true,true,false],'confirm seed '+c.seed);
   if(c.signal){assert(st.checks.every(x=>x.ok),'signal seed '+c.seed);assert.match(st.plan,/^Сетап есть/);assert.equal(st.missing.length,0);}
   if(c.signal?.side==='ЛОНГ')assert.match(st.down,/против тренда/);
+  // Готовность: сигнал — 100 %, без сигнала — до 95 %, без тренда — не выше 15 %.
+  assert(st.score>=0&&st.score<=100);assert.equal(st.scoreParts.reduce((a,p)=>a+p.max,0)<=100,true);
+  if(c.signal)assert.equal(st.score,100);else assert(st.score<=95);
+  if(last.startsWith('тренд не'))assert(st.score<=15,'no trend seed '+c.seed);
+  if(last.startsWith('свеча есть'))assert(st.score>=75,'only confirmation missing seed '+c.seed+' '+st.score);
   const ch=chartData(d15,d1h,features(d15,d1h,d4h));
   assert.equal(ch.bars.length,110);for(const k of ['ema50','ema200','vwap','rsi','volAvg'])assert.equal(ch[k].length,110,k);
   assert(ch.levels.every(Number.isFinite));
