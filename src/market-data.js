@@ -1,6 +1,7 @@
 // Загрузка свечей 15м / 1ч / 4ч для раздела «Рынки» с запасными источниками.
-import {ASSETS, CHAINS, SOURCE_LABELS, BYBIT, GATE, MEXC, YAHOO} from './markets.js';
-import {analyze} from './market-rules.js';
+import {ASSETS, CHAINS, SOURCE_LABELS, BYBIT, GATE, MEXC, KRAKEN, YAHOO} from './markets.js';
+import {analyze, features} from './market-rules.js';
+import {story, chartData} from './market-story.js';
 
 const SEC = {'15m': 900, '1h': 3600, '4h': 14400};
 const LIMIT = {'15m': 500, '1h': 500, '4h': 300};
@@ -41,12 +42,20 @@ const SOURCES = {
     if (!Array.isArray(rows)) throw Error('MEXC: пустой ответ');
     return rows.map(r => ({t: Number(r[0]), o: +r[1], h: +r[2], l: +r[3], c: +r[4], v: +r[5]}));
   },
+  async kraken(asset, tf, request) {
+    const pair = (asset.id === 'BTC' ? 'XBT' : asset.id) + 'USD';
+    const j = await getJson(request, `${KRAKEN}/0/public/OHLC?pair=${pair}&interval=${{'15m': 15, '1h': 60, '4h': 240}[tf]}`);
+    const rows = Object.entries(j.result || {}).find(([k]) => k !== 'last')?.[1];
+    if (!Array.isArray(rows)) throw Error('Kraken: ' + ((j.error || []).join(', ') || 'пустой ответ'));
+    return rows.map(r => ({t: Number(r[0]) * 1000, o: +r[1], h: +r[2], l: +r[3], c: +r[4], v: +r[6]}));
+  },
   async yahoo(asset, tf, request) {
-    const [interval, range] = tf === '15m' ? ['15m', '10d'] : ['60m', '60d'];
+    const [interval, range, step] = tf === '15m' ? ['15m', '10d', 900000] : ['60m', '60d', 3600000];
     const j = await getJson(request, `${YAHOO}/v8/finance/chart/${encodeURIComponent(asset.yahoo[0])}?interval=${interval}&range=${range}`);
     const x = j.chart?.result?.[0], q = x?.indicators?.quote?.[0];
     if (!x?.timestamp || !q) throw Error('Yahoo: нет свечей');
-    const bars = x.timestamp.map((t, i) => ({t: t * 1000, o: q.open[i], h: q.high[i], l: q.low[i], c: q.close[i], v: q.volume?.[i] ?? 0}));
+    // Последняя «живая» свеча Yahoo приходит с неровным временем (например 16:59:57) — её отбрасываем.
+    const bars = x.timestamp.map((t, i) => ({t: t * 1000, o: q.open[i], h: q.high[i], l: q.low[i], c: q.close[i], v: q.volume?.[i] ?? 0})).filter(b => b.t % step === 0);
     return tf === '4h' ? toFourHours(bars.filter(valid)) : bars;
   },
 };
@@ -86,15 +95,20 @@ export async function loadMarket(asset, request = fetch, now = Date.now()) {
 export function findAsset(id) { return ASSETS.find(a => a.id === id); }
 
 // Анализ одного актива. Только чтение данных и расчёт, без записи и без сделок.
-export async function analyzeAsset(asset, request = fetch, now = Date.now()) {
+export async function analyzeAsset(asset, request = fetch, now = Date.now(), detail = false) {
   const m = await loadMarket(asset, request, now);
-  const {signal, reasons} = analyze(asset.binance || asset.id, m.d15, m.d1h, m.d4h, undefined, m.extra);
+  const result = analyze(asset.binance || asset.id, m.d15, m.d1h, m.d4h, undefined, m.extra);
   const last = m.d15.at(-1), closedAt = last.t + 900000;
   const volume = m.d15.some(b => b.v > 0);
-  return {
+  const out = {
     id: asset.id, name: asset.name, group: asset.group, source: m.source,
     sourceName: SOURCE_LABELS[m.source] + (m.source === 'yahoo' ? ' · ' + (asset.note || asset.yahoo[0]) : ''),
     volume, price: last.c, closedAt, stale: now - closedAt > 3600000,
-    signal, reasons, extra: m.extra, fallbacks: m.attempts, checkedAt: now,
+    signal: result.signal, reasons: result.reasons, extra: m.extra, fallbacks: m.attempts, checkedAt: now,
   };
+  if (detail) {
+    out.story = story(asset, m.d15, m.d1h, m.d4h, result, m.extra);
+    out.chart = chartData(m.d15, m.d1h, features(m.d15, m.d1h, m.d4h));
+  }
+  return out;
 }

@@ -128,7 +128,7 @@ export default {
  }
  if(path==='/api/markets/sources'&&req.method==='GET')return json(await probeSources());
  if(path==='/api/markets/assets'&&req.method==='GET')return json({assets:ASSETS.map(({id,name,group})=>({id,name,group}))});
- if(path==='/api/markets/analysis'&&req.method==='GET'){const asset=findAsset(url.searchParams.get('id'));if(!asset)return json({error:'Неизвестный актив'},400);return json(await analyzeAsset(asset));}
+ if(path==='/api/markets/analysis'&&req.method==='GET'){const asset=findAsset(url.searchParams.get('id'));if(!asset)return json({error:'Неизвестный актив'},400);return json(await analyzeAsset(asset,fetch,Date.now(),url.searchParams.get('detail')==='1'));}
  if(path==='/api/feeds'&&req.method==='GET')return json({prices:await quotes(),fred:await macro(env)});
  if(path==='/api/shadow-preview'&&req.method==='GET'){
  const symbol=url.searchParams.get('symbol');if(!cfg.symbols.includes(symbol))return json({error:'Неизвестная пара'},400);
