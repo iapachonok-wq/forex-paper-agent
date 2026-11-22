@@ -19,4 +19,5 @@ nav{flex-wrap:wrap}.terminalBar{display:flex;align-items:center;justify-content:
 [data-theme="dark"] .event{border-color:#344a3e}
 [data-theme="dark"] .marketBanner{background:#1b3528;border-color:#548b69}
 [data-theme="dark"] #notice,[data-theme="dark"] #error{color:#ffb89d}
+.tableScroll{overflow-x:auto}.tableScroll table{border-collapse:collapse;width:100%;font-size:13px}.tableScroll th,.tableScroll td{text-align:left;padding:8px 10px;border-bottom:1px solid #dde4dc;vertical-align:top}[data-theme="dark"] .tableScroll th,[data-theme="dark"] .tableScroll td{border-color:#344a3e}
 @media(max-width:640px){header{gap:14px;flex-wrap:wrap;padding:16px}.headerActions{margin-left:auto}.headerActions button{font-size:13px;padding:10px 12px}}
