@@ -26,6 +26,29 @@ async function loadMarkets(){
 }
 byId('marketsRefresh').onclick=loadMarkets;
 
+// Журнал сигналов по правилу, который ведёт облачный сканер.
+async function loadSignals(){
+ if(byId('app').hidden)return;
+ try{
+  const d=await api('markets/signals'),sc=d.scan,tiles=[['Открытых сигналов',String(d.open)],['Сигналов сегодня',d.today+' из '+d.guard.max_signals_per_day]];
+  if(d.stats)tiles.push(['Закрыто',String(d.stats.n)],['В плюс',Math.round(100*d.stats.wins/d.stats.n)+' %'],['Итог',(d.stats.sum>=0?'+':'')+d.stats.sum.toFixed(1)+' R'],['Цель / стоп / время',d.stats.target+' / '+d.stats.stop+' / '+d.stats.time]);else tiles.push(['Закрыто','0']);
+  byId('signalsTiles').replaceChildren(...tiles.map(([k,v])=>{const a=node('article');a.append(node('small',k),node('strong',v));return a;}));
+  byId('signalsStatus').textContent=(sc.lastRun?'Последний проход сканера: '+localTime(sc.lastRun)+' (Нью-Йорк), всего проходов '+sc.runs+'.':'Сканер ещё не запускался: первый проход в течение нескольких минут.')+(sc.lastError?' Ошибка: '+sc.lastError:'')+(d.stats&&d.stats.n<30?' Меньше 30 закрытых сигналов: статистика пока ни о чём не говорит.':'');
+  const list=byId('signalsList');list.replaceChildren();
+  if(!d.signals.length)list.append(node('p','Сигналов пока нет. Сюда попадают только сетапы, где сошлись тренд, зона и сигнал, и которые пропустил риск-страж.','muted'));
+  for(const s of d.signals){const g=s.signal,card=node('article',undefined,'signalCard'),head=node('div',undefined,'assetHead');
+   const open=node('button',s.name||s.asset,'linkButton');open.type='button';open.onclick=()=>openAsset(s.asset);
+   head.append(open,node('span',g.side,'tag tagSignal'),node('span',s.status+(s.r!=null?' '+(s.r>=0?'+':'')+s.r.toFixed(1)+' R':''),'tag'));card.append(head);
+   card.append(node('p',`Свеча ${localTime(s.t)} (Нью-Йорк) · вход ${fmtPrice(s.entry)} · стоп ${fmtPrice(s.stop)} (${g.risk_pct_price.toFixed(2)} %) · цель ${fmtPrice(s.tp1)} (1 : ${s.rr.toFixed(1)}) · цель 2 ${fmtPrice(g.tp2)}`));
+   const ul=node('ul');for(const t of [...g.reasons,...g.warnings.map(w=>'⚠ '+w)])ul.append(node('li',t));card.append(ul);
+   card.append(node('small','Данные: '+(SOURCE_NAMES[s.source]||s.source||'—')+(s.closedAt?' · закрыт '+localTime(s.closedAt):'')));list.append(card);}
+ }catch(e){byId('signalsStatus').textContent='Не удалось загрузить сигналы: '+e.message;}
+}
+byId('signalsRefresh').onclick=loadSignals;
+window.addEventListener('hashchange',()=>{if(location.hash==='#markets')loadSignals();});
+setTimeout(()=>{if(location.hash==='#markets')loadSignals();},1200);
+setInterval(()=>{if(!document.hidden&&location.hash==='#markets'&&!byId('app').hidden)loadSignals();},120000);
+
 // Карточка актива: график 15м и разбор словами. Всё считает код, без AI.
 let detailRequest=0;
 async function openAsset(id){
