@@ -62,17 +62,23 @@ setInterval(()=>{if(!document.hidden&&location.hash==='#markets'&&!byId('app').h
 
 // Карточка актива: график 15м и разбор словами. Всё считает код, без AI.
 let detailRequest=0;
-let currentAsset=null;
+let currentAsset=null,currentTf='15m';
+const TF_NAMES={'15m':'15 минут','5m':'5 минут'};
 async function openAsset(id,quiet=false){
  const req=++detailRequest,host=byId('marketDetail');currentAsset=id;host.hidden=false;
  // При тихом обновлении старый график остаётся на месте, пока не придёт новый.
  if(!quiet){host.replaceChildren(node('p','Загружаем график и разбор…','muted'));host.scrollIntoView({behavior:'smooth',block:'start'});}
- try{const r=await api('markets/analysis?id='+encodeURIComponent(id)+'&detail=1');if(req!==detailRequest)return;renderAsset(r);}
+ try{const r=await api('markets/analysis?id='+encodeURIComponent(id)+'&detail=1&tf='+currentTf);if(req!==detailRequest)return;renderAsset(r);}
  catch(e){if(req===detailRequest)host.replaceChildren(node('p','Не удалось загрузить: '+e.message));}
 }
 function renderAsset(r){
  const host=byId('marketDetail'),s=r.signal,st=r.story;host.replaceChildren();
- const head=node('div',undefined,'assetHead');head.append(node('h2',r.name+' · 15 минут'),node('span',s?'сигнал · '+s.side:'сетапа нет',s?'tag '+sideClass(s.dir)+'Tag':'tag'));host.append(head);
+ const head=node('div',undefined,'assetHead');head.append(node('h2',r.name+' · '+TF_NAMES[r.tf]),node('span',s?'сигнал · '+s.side:'сетапа нет',s?'tag '+sideClass(s.dir)+'Tag':'tag'));
+ // Переключатель таймфрейма: перерисовывает всю карточку — график, готовность и разбор.
+ const tabs=node('div',undefined,'tfSwitch');tabs.setAttribute('role','group');tabs.setAttribute('aria-label','Таймфрейм');
+ for(const tf of ['15m','5m']){const b=node('button',TF_NAMES[tf],tf===r.tf?'':'secondary');b.type='button';b.setAttribute('aria-pressed',String(tf===r.tf));b.onclick=()=>{if(tf===currentTf)return;currentTf=tf;openAsset(r.id,true);tabs.querySelectorAll('button').forEach(x=>x.disabled=true);};tabs.append(b);}
+ head.append(tabs);host.append(head);
+ if(r.tf==='5m')host.append(node('p','Правило в боте рассчитано на 15 минут. На 5 минутах те же условия срабатывают чаще и шумнее, правило на этом таймфрейме не проверено. Таблица и журнал сигналов — по 15 минутам.','muted'));
  const idea=st.idea;
  if(idea){const box=node('div',undefined,'entryBanner '+sideClass(idea.dir));box.append(node('div',(idea.signal?'Вход по сигналу: ':'Вход был бы: ')+(idea.dir>0?'ЛОНГ':'ШОРТ')+' ≈ '+fmtPrice(idea.entry),'entryBig'),node('div',`стоп ${fmtPrice(idea.stop)} · цель ${fmtPrice(idea.target)}`+(idea.signal?'':' · ориентир, сетапа пока нет'),'entrySmall'));host.append(box);}
  host.append(node('p','Данные: '+r.sourceName+(r.volume?'':' · без объёма')+(r.fee_pct?' · комиссия '+r.fee_pct+' % за сторону (оценка)':'')+' · последняя закрытая свеча до '+localTime(r.closedAt)+' (Нью-Йорк)'+(r.stale?' · данные старые: рынок закрыт или источник отстаёт':''),'muted'));

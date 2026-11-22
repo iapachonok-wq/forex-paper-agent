@@ -1,12 +1,20 @@
-// Загрузка свечей 15м / 1ч / 4ч для раздела «Рынки» с запасными источниками.
+// Загрузка свечей для раздела «Рынки» с запасными источниками.
+// Рабочий таймфрейм правила — 15м (как в bot.py) или 5м для просмотра; старшие — всегда 1ч и 4ч.
 import {ASSETS, chainFor, SOURCE_LABELS, BYBIT, GATE, MEXC, KRAKEN, YAHOO, OANDA, feeFor} from './markets.js';
 import {analyze, features, RULES} from './market-rules.js';
 export const rulesFor = (asset, source) => ({...RULES, fee_pct: feeFor(asset, source)});
 import {story, chartData} from './market-story.js';
 
-const SEC = {'15m': 900, '1h': 3600, '4h': 14400};
-const LIMIT = {'15m': 500, '1h': 500, '4h': 300};
-const MIN = {'15m': 120, '1h': 210, '4h': 60};
+export const ENTRY_TFS = ['15m', '5m'];
+const SEC = {'5m': 300, '15m': 900, '1h': 3600, '4h': 14400};
+const LIMIT = {'5m': 500, '15m': 500, '1h': 500, '4h': 300};
+const MIN = {'5m': 120, '15m': 120, '1h': 210, '4h': 60};
+const CODES = {
+  bybit: {'5m': 5, '15m': 15, '1h': 60, '4h': 240},
+  mexc: {'5m': '5m', '15m': '15m', '1h': '60m', '4h': '4h'},
+  oanda: {'5m': 'M5', '15m': 'M15', '1h': 'H1', '4h': 'H4'},
+  kraken: {'5m': 5, '15m': 15, '1h': 60, '4h': 240},
+};
 
 async function getJson(request, url) {
   const r = await request(url, {headers: {'User-Agent': 'forex-paper-agent/1.0'}, signal: AbortSignal.timeout(10000)});
@@ -29,7 +37,7 @@ export function toFourHours(hours) {
 
 const SOURCES = {
   async bybit(asset, tf, request) {
-    const j = await getJson(request, `${BYBIT}/v5/market/kline?category=linear&symbol=${asset.binance}&interval=${{'15m': 15, '1h': 60, '4h': 240}[tf]}&limit=${LIMIT[tf]}`);
+    const j = await getJson(request, `${BYBIT}/v5/market/kline?category=linear&symbol=${asset.binance}&interval=${CODES.bybit[tf]}&limit=${LIMIT[tf]}`);
     if (j.retCode !== 0 || !Array.isArray(j.result?.list)) throw Error(j.retMsg || 'Bybit: пустой ответ');
     return j.result.list.map(r => ({t: Number(r[0]), o: +r[1], h: +r[2], l: +r[3], c: +r[4], v: +r[5]}));
   },
@@ -39,13 +47,13 @@ const SOURCES = {
     return rows.map(r => ({t: Number(r[0]) * 1000, o: +r[5], h: +r[3], l: +r[4], c: +r[2], v: +r[6]}));
   },
   async mexc(asset, tf, request) {
-    const rows = await getJson(request, `${MEXC}/api/v3/klines?symbol=${asset.binance}&interval=${{'15m': '15m', '1h': '60m', '4h': '4h'}[tf]}&limit=${LIMIT[tf]}`);
+    const rows = await getJson(request, `${MEXC}/api/v3/klines?symbol=${asset.binance}&interval=${CODES.mexc[tf]}&limit=${LIMIT[tf]}`);
     if (!Array.isArray(rows)) throw Error('MEXC: пустой ответ');
     return rows.map(r => ({t: Number(r[0]), o: +r[1], h: +r[2], l: +r[3], c: +r[4], v: +r[5]}));
   },
   // Только чтение свечей демо-сервера OANDA с токеном из сохранённого профиля. Ордеров нет.
   async oanda(asset, tf, request, opts) {
-    const url = `${OANDA}/v3/instruments/${asset.oanda}/candles?granularity=${{'15m': 'M15', '1h': 'H1', '4h': 'H4'}[tf]}&count=${LIMIT[tf]}&price=M&dailyAlignment=0&alignmentTimezone=UTC`;
+    const url = `${OANDA}/v3/instruments/${asset.oanda}/candles?granularity=${CODES.oanda[tf]}&count=${LIMIT[tf]}&price=M&dailyAlignment=0&alignmentTimezone=UTC`;
     const r = await request(url, {headers: {Authorization: 'Bearer ' + opts.oandaToken}, redirect: 'error', signal: AbortSignal.timeout(10000)});
     if (!r.ok) throw Error('OANDA HTTP ' + r.status);
     const j = await r.json();
@@ -54,13 +62,13 @@ const SOURCES = {
   },
   async kraken(asset, tf, request) {
     const pair = (asset.id === 'BTC' ? 'XBT' : asset.id) + 'USD';
-    const j = await getJson(request, `${KRAKEN}/0/public/OHLC?pair=${pair}&interval=${{'15m': 15, '1h': 60, '4h': 240}[tf]}`);
+    const j = await getJson(request, `${KRAKEN}/0/public/OHLC?pair=${pair}&interval=${CODES.kraken[tf]}`);
     const rows = Object.entries(j.result || {}).find(([k]) => k !== 'last')?.[1];
     if (!Array.isArray(rows)) throw Error('Kraken: ' + ((j.error || []).join(', ') || 'пустой ответ'));
     return rows.map(r => ({t: Number(r[0]) * 1000, o: +r[1], h: +r[2], l: +r[3], c: +r[4], v: +r[6]}));
   },
   async yahoo(asset, tf, request) {
-    const [interval, range, step] = tf === '15m' ? ['15m', '10d', 900000] : ['60m', '60d', 3600000];
+    const [interval, range] = {'5m': ['5m', '5d'], '15m': ['15m', '10d']}[tf] || ['60m', '60d'], step = SEC[tf === '4h' ? '1h' : tf] * 1000;
     const j = await getJson(request, `${YAHOO}/v8/finance/chart/${encodeURIComponent(asset.yahoo[0])}?interval=${interval}&range=${range}`);
     const x = j.chart?.result?.[0], q = x?.indicators?.quote?.[0];
     if (!x?.timestamp || !q) throw Error('Yahoo: нет свечей');
@@ -88,15 +96,17 @@ async function bybitExtra(asset, request) {
 
 // Источник применим к активу: у актива есть символ этой площадки, а для OANDA ещё и сохранён профиль.
 const usable = (source, asset, opts) => source === 'oanda' ? !!(asset.oanda && opts.oandaToken) : source === 'yahoo' ? !!asset.yahoo : source === 'kraken' || source === 'gate' ? asset.group === 'crypto' : !!asset.binance;
-export async function loadMarket(asset, request = fetch, now = Date.now(), opts = {}) {
+// Возвращает свечи рабочего таймфрейма в поле d15 (имя оставлено от 15м), его код — в поле tf.
+export async function loadMarket(asset, request = fetch, now = Date.now(), opts = {}, entry = '15m') {
+  if (!ENTRY_TFS.includes(entry)) throw Error('Неизвестный таймфрейм');
   const attempts = [];
   for (const source of chainFor(asset).filter(s => usable(s, asset, opts))) {
     try {
-      const [d15, d1h, d4h] = await Promise.all(['15m', '1h', '4h'].map(async tf => closedOnly(await SOURCES[source](asset, tf, request, opts), tf, now)));
-      const short = [['15m', d15], ['1h', d1h], ['4h', d4h]].find(([tf, b]) => b.length < MIN[tf]);
+      const [d15, d1h, d4h] = await Promise.all([entry, '1h', '4h'].map(async tf => closedOnly(await SOURCES[source](asset, tf, request, opts), tf, now)));
+      const short = [[entry, d15], ['1h', d1h], ['4h', d4h]].find(([tf, b]) => b.length < MIN[tf]);
       if (short) throw Error(`мало свечей ${short[0]}: ${short[1].length}`);
       const extra = source === 'bybit' ? await bybitExtra(asset, request) : {funding_pct: null, oi_change_pct: null};
-      return {source, d15, d1h, d4h, extra, attempts};
+      return {source, tf: entry, d15, d1h, d4h, extra, attempts};
     } catch (e) {
       attempts.push({source, error: String(e.message || e).slice(0, 120)});
     }
@@ -106,22 +116,25 @@ export async function loadMarket(asset, request = fetch, now = Date.now(), opts 
 
 export function findAsset(id) { return ASSETS.find(a => a.id === id); }
 
+// Тексты правила написаны для 15м; на 5м подменяем подпись таймфрейма во всех строках ответа.
+const retitle = (value, tf) => tf === '15m' ? value : JSON.parse(JSON.stringify(value).replace(/15м/g, '5м').replace(/ATR 15м/g, 'ATR 5м'));
+
 // Анализ одного актива. Только чтение данных и расчёт, без записи и без сделок.
-export async function analyzeAsset(asset, request = fetch, now = Date.now(), detail = false, opts = {}) {
-  const m = await loadMarket(asset, request, now, opts), cfg = rulesFor(asset, m.source);
+export async function analyzeAsset(asset, request = fetch, now = Date.now(), detail = false, opts = {}, entry = '15m') {
+  const m = await loadMarket(asset, request, now, opts, entry), cfg = rulesFor(asset, m.source);
   const result = analyze(asset.binance || asset.id, m.d15, m.d1h, m.d4h, cfg, m.extra);
-  const last = m.d15.at(-1), closedAt = last.t + 900000;
+  const last = m.d15.at(-1), closedAt = last.t + SEC[entry] * 1000;
   const volume = m.d15.some(b => b.v > 0);
   const out = {
-    id: asset.id, name: asset.name, group: asset.group, source: m.source,
+    id: asset.id, name: asset.name, group: asset.group, source: m.source, tf: entry,
     sourceName: SOURCE_LABELS[m.source] + (m.source === 'yahoo' ? ' · ' + (asset.note || asset.yahoo[0]) : ''),
     volume, price: last.c, closedAt, stale: now - closedAt > 3600000,
-    signal: result.signal, reasons: result.reasons, extra: m.extra, fallbacks: m.attempts, checkedAt: now, fee_pct: cfg.fee_pct,
+    signal: retitle(result.signal, entry), reasons: retitle(result.reasons, entry), extra: m.extra, fallbacks: m.attempts, checkedAt: now, fee_pct: cfg.fee_pct,
   };
   const st = story(asset, m.d15, m.d1h, m.d4h, result, m.extra, cfg);
   out.score = st.score; out.scoreDir = st.scoreDir;
   if (detail) {
-    out.story = st;
+    out.story = retitle(st, entry);
     out.chart = chartData(m.d15, m.d1h, features(m.d15, m.d1h, m.d4h, cfg));
   }
   return out;

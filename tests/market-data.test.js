@@ -5,7 +5,7 @@ import {BYBIT,GATE,YAHOO} from '../src/markets.js';
 const now=Date.UTC(2026,10,20,12,7);
 // Ровный рост: тренд вверх, но без отката, значит сетапа нет.
 function series(n,stepMs,end){return Array.from({length:n},(_,i)=>{const t=end-(n-i)*stepMs,c=100+i*0.05;return {t,o:c-0.02,h:c+0.05,l:c-0.05,c,v:10};});}
-const step={15:900000,60:3600000,240:14400000};
+const step={5:300000,15:900000,60:3600000,240:14400000};
 const bybitRows=(iv,n)=>series(n,step[iv],Math.floor(now/step[iv])*step[iv]+step[iv]).reverse().map(b=>[String(b.t),String(b.o),String(b.h),String(b.l),String(b.c),String(b.v),'0']);
 test('Bybit rows are reversed, the open candle dropped, funding and OI read',async()=>{
  const m=await loadMarket(findAsset('BTC'),async url=>{
@@ -15,6 +15,17 @@ test('Bybit rows are reversed, the open candle dropped, funding and OI read',asy
   throw Error('unexpected '+url);},now);
  assert.equal(m.source,'bybit');assert(m.d15.every((b,i)=>!i||b.t>m.d15[i-1].t));assert(m.d15.at(-1).t+900000<=now);assert.equal(m.d15.length,499);
  assert(Math.abs(m.extra.funding_pct-0.01)<1e-12);assert(Math.abs(m.extra.oi_change_pct-10)<1e-9);
+});
+test('5-minute view: 5m candles from the source, texts say 5м, closed time is +5 minutes',async()=>{
+ const urls=[];const ok=async url=>{urls.push(url);
+  if(url.includes('/kline')){const iv=new URL(url).searchParams.get('interval');return {ok:true,json:async()=>({retCode:0,result:{list:bybitRows(+iv,{5:500,60:500,240:300}[iv])}})};}
+  return {ok:true,json:async()=>({retCode:0,result:{list:[]}})};};
+ const r=await analyzeAsset(findAsset('BTC'),ok,now,true,{},'5m');
+ assert.equal(r.tf,'5m');assert(urls.some(u=>u.includes('interval=5&')));assert(!urls.some(u=>u.includes('interval=15&')));
+ assert.equal(r.closedAt%300000,0);assert(r.closedAt<=now);
+ const text=JSON.stringify([r.reasons,r.story]);assert(!text.includes('15м'),'no 15m wording on the 5m view');assert(text.includes('5м'));
+ assert.equal(r.chart.bars.length,110);
+ await assert.rejects(analyzeAsset(findAsset('BTC'),ok,now,false,{},'1m'),/Неизвестный таймфрейм/);
 });
 test('blocked exchange falls back to the next source and reports it',async()=>{
  const urls=[];

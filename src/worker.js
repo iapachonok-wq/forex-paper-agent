@@ -7,7 +7,7 @@ import {initial,check,execute,watch,equity,closedMarket,scenario} from './engine
 import {market,quotes,headlines,chartBars} from './data.js';
 import {ANALYST_PROMPT,CRITIC_PROMPT,CRITIC_SCHEMA} from './prompts.js';
 import {probeSources,probeFiat,ASSETS} from './markets.js';
-import {analyzeAsset,findAsset} from './market-data.js';
+import {analyzeAsset,findAsset,ENTRY_TFS} from './market-data.js';
 import {marketScan,signalJournal} from './market-scan.js';
 // Отдельные расписания: валютный агент и сканер рынков работают в разных запусках,
 // у каждого свой лимит процессора, сбой одного не мешает другому.
@@ -137,7 +137,7 @@ export default {
  if(path==='/api/markets/signals'&&req.method==='GET')return json(await signalJournal(env));
  if(path==='/api/markets/scan'&&req.method==='POST'){const t=Date.now();const r=await marketScan(env,fetch,Date.now(),await marketOpts(env));return json({...r,ms:Date.now()-t});}
  if(path==='/api/markets/assets'&&req.method==='GET')return json({assets:ASSETS.map(({id,name,group})=>({id,name,group}))});
- if(path==='/api/markets/analysis'&&req.method==='GET'){const asset=findAsset(url.searchParams.get('id'));if(!asset)return json({error:'Неизвестный актив'},400);return json(await analyzeAsset(asset,fetch,Date.now(),url.searchParams.get('detail')==='1',await marketOpts(env)));}
+ if(path==='/api/markets/analysis'&&req.method==='GET'){const asset=findAsset(url.searchParams.get('id'));if(!asset)return json({error:'Неизвестный актив'},400);const tf=url.searchParams.get('tf')||'15m';if(!ENTRY_TFS.includes(tf))return json({error:'Неизвестный таймфрейм'},400);return json(await analyzeAsset(asset,fetch,Date.now(),url.searchParams.get('detail')==='1',await marketOpts(env),tf));}
  if(path==='/api/feeds'&&req.method==='GET')return json({prices:await quotes(),fred:await macro(env)});
  if(path==='/api/shadow-preview'&&req.method==='GET'){
  const symbol=url.searchParams.get('symbol');if(!cfg.symbols.includes(symbol))return json({error:'Неизвестная пара'},400);
