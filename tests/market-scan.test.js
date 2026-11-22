@@ -31,7 +31,7 @@ test('outcome: stop checked first, then target, then time after 48 candles',()=>
  const s={...o,dir:-1,entry:100,stop:101,tp1:98};assert.equal(settle(s,[bar(1,97.9,100.5)]).outcome,'цель');
 });
 test('only new candles are checked and history is cut at the candle close',()=>{
- assert.equal(pending(m.d15,undefined).length,1);assert.equal(pending(m.d15,m.d15.at(-1).t).length,0);assert.equal(pending(m.d15,m.d15.at(-10).t).length,2);
+ assert.equal(pending(m.d15,undefined).length,1);assert.equal(pending(m.d15,m.d15.at(-1).t).length,0);assert.equal(pending(m.d15,m.d15.at(-10).t).length,3);
  const bar=m.d15.at(-5),h=sliceAt(m,bar),end=bar.t+900000;
  assert.equal(h.d15.at(-1).t,bar.t);assert(h.d1h.every(b=>b.t+3600000<=end));assert(h.d4h.every(b=>b.t+14400000<=end));
 });

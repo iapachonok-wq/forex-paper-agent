@@ -1,6 +1,7 @@
 import test from 'node:test';import assert from 'node:assert/strict';
 import {loadMarket,analyzeAsset,findAsset,toFourHours} from '../src/market-data.js';
 import {BYBIT,GATE,YAHOO} from '../src/markets.js';
+// BYBIT используется и в проверке металлов и валют ниже.
 const now=Date.UTC(2026,10,20,12,7);
 // Ровный рост: тренд вверх, но без отката, значит сетапа нет.
 function series(n,stepMs,end){return Array.from({length:n},(_,i)=>{const t=end-(n-i)*stepMs,c=100+i*0.05;return {t,o:c-0.02,h:c+0.05,l:c-0.05,c,v:10};});}
@@ -28,6 +29,8 @@ test('blocked exchange falls back to the next source and reports it',async()=>{
 test('metals use Yahoo; 4h candles built from hours; no source means a clear error',async()=>{
  const four=toFourHours([{t:0,o:1,h:2,l:0.5,c:1.5,v:1},{t:3600000,o:1.5,h:3,l:1,c:2,v:2},{t:14400000,o:2,h:2,l:2,c:2,v:1}]);
  assert.deepEqual(four,[{t:0,o:1,h:3,l:0.5,c:2,v:3},{t:14400000,o:2,h:2,l:2,c:2,v:1}]);
- const seen=[];await assert.rejects(analyzeAsset(findAsset('XAU'),async url=>{seen.push(url);return {ok:false,status:404};},now),/Нет данных: Yahoo Finance — HTTP 404/);
- assert(seen.every(u=>u.startsWith(YAHOO)&&u.includes('GC%3DF')));
+ const seen=[];await assert.rejects(analyzeAsset(findAsset('XAU'),async url=>{seen.push(url);return {ok:false,status:404};},now),/Нет данных: Bybit, бессрочные фьючерсы — HTTP 404; Yahoo Finance — HTTP 404/);
+ assert(seen.some(u=>u.startsWith(BYBIT)&&u.includes('symbol=XAUUSDT')));assert(seen.some(u=>u.startsWith(YAHOO)&&u.includes('GC%3DF')));
+ const fx=[];await assert.rejects(analyzeAsset(findAsset('EUR'),async url=>{fx.push(url);return {ok:false,status:404};},now));assert(fx.some(u=>u.includes('symbol=EURUSDUSDT')));assert(fx.some(u=>u.includes('EURUSD%3DX')));
+ const jpy=[];await assert.rejects(analyzeAsset(findAsset('JPY'),async url=>{jpy.push(url);return {ok:false,status:404};},now));assert(jpy.every(u=>u.startsWith(YAHOO)&&u.includes('JPY%3DX')),'JPY has no USDT market, Yahoo only');
 });

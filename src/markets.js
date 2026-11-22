@@ -16,16 +16,26 @@ const COINS = ['BTC', 'ETH', 'SOL', 'BNB', 'XRP', 'DOGE', 'ADA', 'TRX', 'AVAX', 
 const YAHOO_CRYPTO = {TON: 'TON11419-USD'};
 export const ASSETS = [
   ...COINS.map(c => ({id: c, name: c + '/USDT', group: 'crypto', binance: c + 'USDT', yahoo: [YAHOO_CRYPTO[c] || c + '-USD']})),
-  {id: 'XAU', name: 'Золото XAU/USD', group: 'metal', binance: 'XAUUSDT', yahoo: ['GC=F'], note: 'фьючерс COMEX'},
-  {id: 'XAG', name: 'Серебро XAG/USD', group: 'metal', binance: 'XAGUSDT', yahoo: ['SI=F'], note: 'фьючерс COMEX'},
+  // Металлы и валюты к USDT: бессрочные фьючерсы Bybit (с объёмом), запасной источник — Yahoo.
+  {id: 'XAU', name: 'Золото XAU/USDT', group: 'metal', binance: 'XAUUSDT', yahoo: ['GC=F'], note: 'фьючерс COMEX'},
+  {id: 'XAG', name: 'Серебро XAG/USDT', group: 'metal', binance: 'XAGUSDT', yahoo: ['SI=F'], note: 'фьючерс COMEX'},
+  {id: 'EUR', name: 'EUR/USDT', group: 'fx', binance: 'EURUSDUSDT', yahoo: ['EURUSD=X'], note: 'EUR/USD'},
+  {id: 'GBP', name: 'GBP/USDT', group: 'fx', binance: 'GBPUSDUSDT', yahoo: ['GBPUSD=X'], note: 'GBP/USD'},
+  // Этих валют к USDT на доступных биржах нет: берём курс к доллару с Yahoo, без объёма.
+  {id: 'JPY', name: 'USD/JPY', group: 'fx', yahoo: ['JPY=X'], note: 'USD/JPY', chain: ['yahoo']},
+  {id: 'AUD', name: 'AUD/USD', group: 'fx', yahoo: ['AUDUSD=X'], note: 'AUD/USD', chain: ['yahoo']},
+  {id: 'CHF', name: 'USD/CHF', group: 'fx', yahoo: ['CHF=X'], note: 'USD/CHF', chain: ['yahoo']},
+  {id: 'CAD', name: 'USD/CAD', group: 'fx', yahoo: ['CAD=X'], note: 'USD/CAD', chain: ['yahoo']},
+  {id: 'NZD', name: 'NZD/USD', group: 'fx', yahoo: ['NZDUSD=X'], note: 'NZD/USD', chain: ['yahoo']},
   {id: 'SPX', name: 'S&P 500', group: 'index', yahoo: ['ES=F', '^GSPC'], note: 'фьючерс E-mini CME'},
   {id: 'NDX', name: 'Nasdaq 100', group: 'index', yahoo: ['NQ=F', '^NDX'], note: 'фьючерс E-mini CME'},
 ];
 // Порядок источников: первый ответивший с достаточной историей используется для анализа.
-export const CHAINS = {crypto: ['bybit', 'gate', 'mexc', 'kraken', 'yahoo'], metal: ['yahoo'], index: ['yahoo']};
+export const CHAINS = {crypto: ['bybit', 'gate', 'mexc', 'kraken', 'yahoo'], metal: ['bybit', 'yahoo'], fx: ['bybit', 'yahoo'], index: ['yahoo']};
+export const chainFor = asset => asset.chain || CHAINS[asset.group];
 // Оценка комиссии за одну сторону сделки, % (тейкер, без скидок). Для металлов и индексов —
 // фьючерсы CME/COMEX, где комиссия брокера мала относительно цены; это ориентир, не тариф брокера.
-export const FEES = {bybit: 0.055, gate: 0.1, mexc: 0.05, kraken: 0.4, yahoo: {crypto: 0.1, metal: 0.01, index: 0.01}};
+export const FEES = {bybit: 0.055, gate: 0.1, mexc: 0.05, kraken: 0.4, yahoo: {crypto: 0.1, metal: 0.01, index: 0.01, fx: 0.01}};
 export const feeFor = (asset, source) => typeof FEES[source] === 'number' ? FEES[source] : FEES[source][asset.group];
 export const SOURCE_LABELS = {bybit: 'Bybit, бессрочные фьючерсы', gate: 'Gate, спот', mexc: 'MEXC, спот', kraken: 'Kraken, спот к USD', yahoo: 'Yahoo Finance'};
 

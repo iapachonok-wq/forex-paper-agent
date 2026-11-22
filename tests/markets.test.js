@@ -1,6 +1,6 @@
 import test from 'node:test';import assert from 'node:assert/strict';
 import {ASSETS,probeSources,READERS,HOSTS,FUTURES,YAHOO,KUCOIN} from '../src/markets.js';
-test('asset list covers crypto, metals and US indices',()=>{const ids=ASSETS.map(a=>a.id);for(const id of ['BTC','ETH','SOL','BNB','XRP','DOGE','ADA','AVAX','LINK','TON','XAU','XAG','SPX','NDX'])assert(ids.includes(id),id);assert.equal(new Set(ids).size,ids.length);});
+test('asset list covers crypto, metals and US indices',()=>{const ids=ASSETS.map(a=>a.id);for(const id of ['BTC','ETH','SOL','BNB','XRP','DOGE','ADA','AVAX','LINK','TON','XAU','XAG','EUR','GBP','JPY','AUD','CHF','CAD','NZD','SPX','NDX'])assert(ids.includes(id),id);assert.equal(new Set(ids).size,ids.length);});
 test('probe stays under Workers subrequest limit and only GETs known hosts',async()=>{
  const urls=[];
  const r=await probeSources(async(url,opts)=>{urls.push(url);assert.equal(opts.method,undefined);

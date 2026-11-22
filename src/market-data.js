@@ -1,5 +1,5 @@
 // Загрузка свечей 15м / 1ч / 4ч для раздела «Рынки» с запасными источниками.
-import {ASSETS, CHAINS, SOURCE_LABELS, BYBIT, GATE, MEXC, KRAKEN, YAHOO, feeFor} from './markets.js';
+import {ASSETS, chainFor, SOURCE_LABELS, BYBIT, GATE, MEXC, KRAKEN, YAHOO, feeFor} from './markets.js';
 import {analyze, features, RULES} from './market-rules.js';
 export const rulesFor = (asset, source) => ({...RULES, fee_pct: feeFor(asset, source)});
 import {story, chartData} from './market-story.js';
@@ -79,7 +79,7 @@ async function bybitExtra(asset, request) {
 
 export async function loadMarket(asset, request = fetch, now = Date.now()) {
   const attempts = [];
-  for (const source of CHAINS[asset.group]) {
+  for (const source of chainFor(asset)) {
     try {
       const [d15, d1h, d4h] = await Promise.all(['15m', '1h', '4h'].map(async tf => closedOnly(await SOURCES[source](asset, tf, request), tf, now)));
       const short = [['15m', d15], ['1h', d1h], ['4h', d4h]].find(([tf, b]) => b.length < MIN[tf]);

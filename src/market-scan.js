@@ -8,7 +8,7 @@ import {analyze} from './market-rules.js';
 export const GUARD = {cooldown_hours: 4, max_signals_per_day: 6, max_open_same_direction: 2, expire_bars: 48};
 // Лимит процессора Cloudflare Free — 10 мс на запуск, поэтому за раз только два актива
 // и не больше двух пропущенных свечей на актив.
-export const PER_RUN = 2, BACKFILL = 2;
+export const PER_RUN = 2, BACKFILL = 3;
 const M15 = 900000, H1 = 3600000, H4 = 14400000;
 
 export function initialScanState() { return {pointer: 0, day: '', count: 0, last: {}, seen: {}, board: {}, runs: 0, lastRun: 0, lastError: null}; }
@@ -30,7 +30,7 @@ export function guard(sig, group, st, open, now) {
   if (last && now - last < GUARD.cooldown_hours * H1) return 'пауза по активу';
   if (st.count >= GUARD.max_signals_per_day) return 'дневной лимит сигналов';
   if (open.filter(o => o.grp === group && o.dir === sig.dir).length >= GUARD.max_open_same_direction)
-    return `уже ${GUARD.max_open_same_direction} открытых сигнала в эту сторону (${group === 'crypto' ? 'монеты ходят вместе' : 'активы группы ходят вместе'})`;
+    return `уже ${GUARD.max_open_same_direction} открытых сигнала в эту сторону (${group === 'crypto' ? 'монеты ходят вместе' : group === 'fx' ? 'валюты к доллару ходят вместе' : 'активы группы ходят вместе'})`;
   return null;
 }
 // Исход открытого сигнала по свечам после него. Стоп проверяется первым, как в bot.py.
