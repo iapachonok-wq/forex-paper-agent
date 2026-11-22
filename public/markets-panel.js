@@ -1,7 +1,8 @@
 // Вкладка «Рынки». Только чтение данных и анализ, сделок здесь нет.
 const SOURCE_NAMES={binance_futures:'Фьючерсы Binance (fapi.binance.com)',binance_spot:'Спот Binance (api.binance.com)',binance_spot_mirror:'Спот Binance, открытое зеркало (data-api.binance.vision)',yahoo:'Yahoo Finance',kucoin:'KuCoin',kraken:'Kraken',coinbase:'Coinbase Exchange',okx:'OKX',bybit:'Bybit',gate:'Gate',mexc:'MEXC'};
 function ageText(ms){if(!ms)return '—';const m=Math.round((Date.now()-ms)/60000);return m<1?'только что':m<120?m+' мин назад':Math.round(m/60)+' ч назад';}
-const fmtPrice=x=>!Number.isFinite(x)?'—':x>=1000?x.toLocaleString('ru-RU',{maximumFractionDigits:1}):x>=1?x.toFixed(3):x.toFixed(5);
+// Тот же формат, что в разборе и в bot.py: пробел между тысячами, точка в дробной части.
+const fmtPrice=x=>!Number.isFinite(x)?'—':x>=1000?x.toFixed(1).replace(/\B(?=(\d{3})+(?!\d))/g,' '):x>=1?x.toFixed(3):x.toFixed(5);
 let marketsLoaded=false,marketsBusy=false;
 async function loadMarkets(){
  if(marketsBusy||byId('app').hidden)return;marketsBusy=true;const b=byId('marketsRefresh');b.disabled=true;
@@ -62,7 +63,9 @@ function drawMarketChart(r){
  for(let i=0;i<=4;i++){const p=lo+(hi-lo)*i/4;svg.append(el('line',{x1:left,x2:plotRight,y1:y(p),y2:y(p),class:'chartGrid'}),el('text',{x:plotRight+6,y:y(p)+4,class:'chartLabel'},fmtPrice(p)));}
  for(const lv of c.levels)if(lv>lo&&lv<hi){g.append(el('line',{x1:left,x2:plotRight,y1:y(lv),y2:y(lv),stroke:'#8a8f99','stroke-dasharray':'2 4'}));g.append(el('text',{x:left+4,y:y(lv)-3,class:'chartLabel'},'уровень '+fmtPrice(lv)));}
  const line=(vals,attrs)=>{let d='',pen=false;vals.forEach((v,i)=>{if(v==null){pen=false;return;}d+=(pen?'L':'M')+x(i).toFixed(1)+' '+y(v).toFixed(1);pen=true;});if(d)g.append(el('path',{d,fill:'none',...attrs}));};
- line(c.ema200,{stroke:'#5b8cff','stroke-width':1.6});line(c.ema50,{stroke:'#f7a600','stroke-width':1.6});line(c.vwap,{stroke:'#c3a0ff','stroke-width':1.3,'stroke-dasharray':'5 4'});
+ line(c.ema200,{stroke:'#5b8cff','stroke-width':1.6});
+ // Если линия EMA вне видимого диапазона цен, подписываем, где она.
+ [[c.ema200,'EMA 200','#5b8cff'],[c.ema50,'EMA 50','#f7a600']].forEach(([vals,name,col],k)=>{const v=vals.at(-1);if(v!=null&&(v>hi||v<lo))svg.append(el('text',{x:left+4,y:(v>hi?P[0]+12:P[1]-6)+k*(v>hi?13:-13),fill:col,'font-size':11},name+(v>hi?' выше графика: ':' ниже графика: ')+fmtPrice(v)));});line(c.ema50,{stroke:'#f7a600','stroke-width':1.6});line(c.vwap,{stroke:'#c3a0ff','stroke-width':1.3,'stroke-dasharray':'5 4'});
  const vmax=Math.max(...bars.map(b=>b[5]),...c.volAvg.filter(v=>v!=null),1),vy=v=>V[1]-v/vmax*(V[1]-V[0]),ry=v=>R[1]-(v-0)/100*(R[1]-R[0]);
  svg.append(el('line',{x1:left,x2:plotRight,y1:ry(70),y2:ry(70),class:'chartGrid'}),el('line',{x1:left,x2:plotRight,y1:ry(30),y2:ry(30),class:'chartGrid'}),el('text',{x:plotRight+6,y:ry(70)+4,class:'chartLabel'},'RSI 70'),el('text',{x:plotRight+6,y:ry(30)+4,class:'chartLabel'},'RSI 30'),el('text',{x:plotRight+6,y:V[0]+10,class:'chartLabel'},'объём'));
  bars.forEach((b,i)=>{const [t,o,h,l,cl,v]=b,col=cl>=o?'#26a69a':'#ef5350',grp=el('g',{class:'candleGroup',tabindex:0});

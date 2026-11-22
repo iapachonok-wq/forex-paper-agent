@@ -2,6 +2,7 @@
 import {features, divergence, fmt, ema, rsi, vwapDaily, RULES} from './market-rules.js';
 
 const pct = (a, b) => (a / b - 1) * 100;
+const label = name => name.startsWith('уровень ') ? 'уровня ' + name.slice(8) : name;
 const signedPct = x => (x >= 0 ? '+' : '') + x.toFixed(2) + ' %';
 
 // Проверка каждого условия правила отдельно, чтобы показать, чего не хватает.
@@ -53,7 +54,7 @@ export function story(asset, d15, d1h, d4h, result, extra = {}, cfg = RULES) {
   } else {
     const c = checklist(d15, f, d, cfg);
     out.checks.push({ok: true, text: `Тренд ${d > 0 ? 'вверх' : 'вниз'}.`});
-    out.checks.push({ok: c.near.length > 0, text: c.near.length ? `Зона: цена у ${c.near.map(x => x[0]).join(', ')}.` : `Зона: последние три свечи не дошли до EMA50, VWAP или уровня ближе чем на ${fmt(f.zone)} (0,6 ATR 1ч).`});
+    out.checks.push({ok: c.near.length > 0, text: c.near.length ? `Зона: цена у ${c.near.map(x => label(x[0])).join(', ')}.` : `Зона: последние три свечи не дошли до EMA50, VWAP или уровня ближе чем на ${fmt(f.zone)} (0,6 ATR 1ч).`});
     out.checks.push({ok: c.candle, text: c.candle ? 'Разворотная свеча 15м есть.' : `Разворотной свечи нет: нужна ${d > 0 ? 'зелёная свеча с закрытием выше максимума' : 'красная свеча с закрытием ниже минимума'} предыдущей.`});
     out.checks.push({ok: c.volOk || c.divOk, text: c.volOk ? `Объём ${c.volRatio.toFixed(1)}× от среднего (нужно больше ${cfg.volume_mult}×).` : c.divOk ? 'Расхождение RSI с ценой есть.' : `Нет подтверждения: объём ${Number.isFinite(c.volRatio) ? c.volRatio.toFixed(1) + '×' : 'нет данных'} при нужных ${cfg.volume_mult}×, расхождения RSI нет.`});
     for (const x of out.checks) if (!x.ok) out.missing.push(x.text);
@@ -63,12 +64,19 @@ export function story(asset, d15, d1h, d4h, result, extra = {}, cfg = RULES) {
     if (result.signal) out.plan = `Сетап есть: вход ${fmt(result.signal.entry)}, стоп ${fmt(result.signal.stop)}, цель ${fmt(result.signal.tp1)}.`;
     else if (!zones.length) out.plan = `Зоны для отката ${d > 0 ? 'ниже' : 'выше'} цены нет. Ждать отката к EMA50 (1ч) или уровню.`;
     else {
-      const stop = z - d * 0.5 * f.a15, risk = Math.abs(z - stop), stopPct = risk / z * 100;
-      const barrier = (d > 0 ? f.resists : [...f.supports].sort((a, b) => b - a)).find(b => (b - z) * d > 0);
-      const rr = barrier ? Math.abs(barrier - z) / risk : null;
-      out.plan = `Вход рассматривать у ${zname} ≈ ${fmt(z)} (${signedPct(pct(z, price))}) после разворотной свечи 15м с объёмом или расхождением RSI. Стоп — за экстремумом отката, ориентир ${fmt(stop)} (${stopPct.toFixed(2)} % от входа)${stopPct > cfg.max_stop_pct ? ': шире предела 2 %, сигнал не пройдёт' : ''}. ` +
+      // Цена уже в зоне: стоп как в правиле — за экстремумом 6 свечей плюс 0,5 ATR 15м.
+      // Иначе ориентир: откат обычно заходит за зону примерно на 1 ATR 15м, плюс тот же запас 0,5 ATR.
+      const inZone = c.near.length > 0, six = d15.slice(-6);
+      const entry = inZone ? price : z;
+      const stop = inZone ? (d > 0 ? Math.min(...six.map(b => b.l)) : Math.max(...six.map(b => b.h))) - d * 0.5 * f.a15 : z - d * 1.5 * f.a15;
+      const risk = (entry - stop) * d, stopPct = risk / entry * 100;
+      const barrier = (d > 0 ? f.resists : [...f.supports].sort((a, b) => b - a)).find(b => (b - entry) * d > 0);
+      const rr = barrier && risk > 0 ? (barrier - entry) * d / risk : null;
+      const where = inZone ? `Цена уже у ${label(c.near[0][0])}. Если появится разворотная свеча 15м с объёмом или расхождением RSI, вход ≈ ${fmt(entry)}` :
+        `Вход рассматривать после отката к ${label(zname)} ≈ ${fmt(z)} (${signedPct(pct(z, price))}) и разворотной свечи 15м с объёмом или расхождением RSI`;
+      out.plan = risk <= 0 ? where + '. Стоп сейчас не строится.' : `${where}. Стоп ${d > 0 ? 'под минимумом' : 'над максимумом'} отката, ориентир ${fmt(stop)} (${stopPct.toFixed(2)} % от входа)${stopPct > cfg.max_stop_pct ? ': шире предела 2 %, сигнал не пройдёт' : ''}. ` +
         (barrier ? `До ${d > 0 ? 'сопротивления' : 'поддержки'} ${fmt(barrier)} ≈ ${rr.toFixed(1)} R${rr < cfg.min_rr ? ': меньше 1,5 R, сигнал не пройдёт' : ''}.` : `Ближайших ${d > 0 ? 'сопротивлений' : 'поддержек'} нет, цель была бы 2 R.`) +
-        ' Точный стоп зависит от свечей отката.';
+        (inZone ? '' : ' Точный стоп зависит от свечей отката.');
     }
   }
   if (!d15.some(b => b.v > 0)) out.missing.push('У источника нет объёма: условие по объёму не выполнится, остаётся расхождение RSI.');
