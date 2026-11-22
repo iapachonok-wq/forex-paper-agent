@@ -132,6 +132,7 @@ export default {
  }
  if(path==='/api/markets/sources'&&req.method==='GET')return json(await probeSources());
  if(path==='/api/markets/signals'&&req.method==='GET')return json(await signalJournal(env));
+ if(path==='/api/markets/scan'&&req.method==='POST'){const t=Date.now();const r=await marketScan(env);return json({...r,ms:Date.now()-t});}
  if(path==='/api/markets/assets'&&req.method==='GET')return json({assets:ASSETS.map(({id,name,group})=>({id,name,group}))});
  if(path==='/api/markets/analysis'&&req.method==='GET'){const asset=findAsset(url.searchParams.get('id'));if(!asset)return json({error:'Неизвестный актив'},400);return json(await analyzeAsset(asset,fetch,Date.now(),url.searchParams.get('detail')==='1'));}
  if(path==='/api/feeds'&&req.method==='GET')return json({prices:await quotes(),fred:await macro(env)});

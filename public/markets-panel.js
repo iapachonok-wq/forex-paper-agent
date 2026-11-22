@@ -45,6 +45,7 @@ async function loadSignals(){
  }catch(e){byId('signalsStatus').textContent='Не удалось загрузить сигналы: '+e.message;}
 }
 byId('signalsRefresh').onclick=loadSignals;
+byId('signalsScan').onclick=async()=>{const b=byId('signalsScan');b.disabled=true;try{const r=await api('markets/scan',{});byId('signalsStatus').textContent='Проверено: '+r.picked.join(', ')+'. Новых сигналов: '+r.inserts.length+', закрыто: '+r.closes.length+'.';await loadSignals();}catch(e){byId('signalsStatus').textContent='Сканирование не удалось: '+e.message;}finally{b.disabled=false;}};
 window.addEventListener('hashchange',()=>{if(location.hash==='#markets')loadSignals();});
 setTimeout(()=>{if(location.hash==='#markets')loadSignals();},1200);
 setInterval(()=>{if(!document.hidden&&location.hash==='#markets'&&!byId('app').hidden)loadSignals();},120000);
