@@ -1,5 +1,5 @@
 // Вкладка «Рынки». Только чтение данных и анализ, сделок здесь нет.
-const SOURCE_NAMES={binance_futures:'Фьючерсы Binance (fapi.binance.com)',binance_spot:'Спот Binance (api.binance.com)',binance_spot_mirror:'Спот Binance, открытое зеркало (data-api.binance.vision)',yahoo:'Yahoo Finance'};
+const SOURCE_NAMES={binance_futures:'Фьючерсы Binance (fapi.binance.com)',binance_spot:'Спот Binance (api.binance.com)',binance_spot_mirror:'Спот Binance, открытое зеркало (data-api.binance.vision)',yahoo:'Yahoo Finance',kucoin:'KuCoin',kraken:'Kraken',coinbase:'Coinbase Exchange',okx:'OKX',bybit:'Bybit',gate:'Gate',mexc:'MEXC'};
 function ageText(ms){if(!ms)return '—';const m=Math.round((Date.now()-ms)/60000);return m<1?'только что':m<120?m+' мин назад':Math.round(m/60)+' ч назад';}
 byId('probeSources').onclick=async()=>{
  const b=byId('probeSources');b.disabled=true;byId('probeStatus').textContent='Проверяем источники из Cloudflare…';byId('probeResult').replaceChildren();
