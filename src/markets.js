@@ -17,27 +17,30 @@ const YAHOO_CRYPTO = {TON: 'TON11419-USD'};
 export const ASSETS = [
   ...COINS.map(c => ({id: c, name: c + '/USDT', group: 'crypto', binance: c + 'USDT', yahoo: [YAHOO_CRYPTO[c] || c + '-USD']})),
   // Металлы и валюты к USDT: бессрочные фьючерсы Bybit (с объёмом), запасной источник — Yahoo.
-  {id: 'XAU', name: 'Золото XAU/USDT', group: 'metal', binance: 'XAUUSDT', yahoo: ['GC=F'], note: 'фьючерс COMEX'},
-  {id: 'XAG', name: 'Серебро XAG/USDT', group: 'metal', binance: 'XAGUSDT', yahoo: ['SI=F'], note: 'фьючерс COMEX'},
-  {id: 'EUR', name: 'EUR/USDT', group: 'fx', binance: 'EURUSDUSDT', yahoo: ['EURUSD=X'], note: 'EUR/USD'},
-  {id: 'GBP', name: 'GBP/USDT', group: 'fx', binance: 'GBPUSDUSDT', yahoo: ['GBPUSD=X'], note: 'GBP/USD'},
-  // Этих валют к USDT на доступных биржах нет: берём курс к доллару с Yahoo, без объёма.
-  {id: 'JPY', name: 'USD/JPY', group: 'fx', yahoo: ['JPY=X'], note: 'USD/JPY', chain: ['yahoo']},
-  {id: 'AUD', name: 'AUD/USD', group: 'fx', yahoo: ['AUDUSD=X'], note: 'AUD/USD', chain: ['yahoo']},
-  {id: 'CHF', name: 'USD/CHF', group: 'fx', yahoo: ['CHF=X'], note: 'USD/CHF', chain: ['yahoo']},
-  {id: 'CAD', name: 'USD/CAD', group: 'fx', yahoo: ['CAD=X'], note: 'USD/CAD', chain: ['yahoo']},
-  {id: 'NZD', name: 'NZD/USD', group: 'fx', yahoo: ['NZDUSD=X'], note: 'NZD/USD', chain: ['yahoo']},
-  {id: 'SPX', name: 'S&P 500', group: 'index', yahoo: ['ES=F', '^GSPC'], note: 'фьючерс E-mini CME'},
-  {id: 'NDX', name: 'Nasdaq 100', group: 'index', yahoo: ['NQ=F', '^NDX'], note: 'фьючерс E-mini CME'},
+  {id: 'XAU', name: 'Золото XAU/USDT', group: 'metal', binance: 'XAUUSDT', oanda: 'XAU_USD', yahoo: ['GC=F'], note: 'фьючерс COMEX'},
+  {id: 'XAG', name: 'Серебро XAG/USDT', group: 'metal', binance: 'XAGUSDT', oanda: 'XAG_USD', yahoo: ['SI=F'], note: 'фьючерс COMEX'},
+  {id: 'EUR', name: 'EUR/USDT', group: 'fx', binance: 'EURUSDUSDT', oanda: 'EUR_USD', yahoo: ['EURUSD=X'], note: 'EUR/USD'},
+  {id: 'GBP', name: 'GBP/USDT', group: 'fx', binance: 'GBPUSDUSDT', oanda: 'GBP_USD', yahoo: ['GBPUSD=X'], note: 'GBP/USD'},
+  // Этих валют к USDT на доступных биржах нет: форекс-брокер OANDA (если сохранён профиль), иначе Yahoo без объёма.
+  {id: 'JPY', name: 'USD/JPY', group: 'fx', oanda: 'USD_JPY', yahoo: ['JPY=X'], note: 'USD/JPY', chain: ['oanda', 'yahoo']},
+  {id: 'AUD', name: 'AUD/USD', group: 'fx', oanda: 'AUD_USD', yahoo: ['AUDUSD=X'], note: 'AUD/USD', chain: ['oanda', 'yahoo']},
+  {id: 'CHF', name: 'USD/CHF', group: 'fx', oanda: 'USD_CHF', yahoo: ['CHF=X'], note: 'USD/CHF', chain: ['oanda', 'yahoo']},
+  {id: 'CAD', name: 'USD/CAD', group: 'fx', oanda: 'USD_CAD', yahoo: ['CAD=X'], note: 'USD/CAD', chain: ['oanda', 'yahoo']},
+  {id: 'NZD', name: 'NZD/USD', group: 'fx', oanda: 'NZD_USD', yahoo: ['NZDUSD=X'], note: 'NZD/USD', chain: ['oanda', 'yahoo']},
+  {id: 'SPX', name: 'S&P 500', group: 'index', oanda: 'SPX500_USD', yahoo: ['ES=F', '^GSPC'], note: 'фьючерс E-mini CME'},
+  {id: 'NDX', name: 'Nasdaq 100', group: 'index', oanda: 'NAS100_USD', yahoo: ['NQ=F', '^NDX'], note: 'фьючерс E-mini CME'},
 ];
 // Порядок источников: первый ответивший с достаточной историей используется для анализа.
-export const CHAINS = {crypto: ['bybit', 'gate', 'mexc', 'kraken', 'yahoo'], metal: ['bybit', 'yahoo'], fx: ['bybit', 'yahoo'], index: ['yahoo']};
+// OANDA используется, только если на вкладке «Демо-счета» сохранён профиль OANDA Practice; иначе пропускается.
+export const CHAINS = {crypto: ['bybit', 'gate', 'mexc', 'kraken', 'yahoo'], metal: ['bybit', 'oanda', 'yahoo'], fx: ['bybit', 'oanda', 'yahoo'], index: ['oanda', 'yahoo']};
 export const chainFor = asset => asset.chain || CHAINS[asset.group];
 // Оценка комиссии за одну сторону сделки, % (тейкер, без скидок). Для металлов и индексов —
 // фьючерсы CME/COMEX, где комиссия брокера мала относительно цены; это ориентир, не тариф брокера.
-export const FEES = {bybit: 0.055, gate: 0.1, mexc: 0.05, kraken: 0.4, yahoo: {crypto: 0.1, metal: 0.01, index: 0.01, fx: 0.01}};
+// У OANDA комиссии нет, издержка — спред; здесь его типичная оценка в процентах на сторону.
+export const FEES = {bybit: 0.055, gate: 0.1, mexc: 0.05, kraken: 0.4, oanda: {fx: 0.01, metal: 0.03, index: 0.01}, yahoo: {crypto: 0.1, metal: 0.01, index: 0.01, fx: 0.01}};
 export const feeFor = (asset, source) => typeof FEES[source] === 'number' ? FEES[source] : FEES[source][asset.group];
-export const SOURCE_LABELS = {bybit: 'Bybit, бессрочные фьючерсы', gate: 'Gate, спот', mexc: 'MEXC, спот', kraken: 'Kraken, спот к USD', yahoo: 'Yahoo Finance'};
+export const SOURCE_LABELS = {bybit: 'Bybit, бессрочные фьючерсы', gate: 'Gate, спот', mexc: 'MEXC, спот', kraken: 'Kraken, спот к USD', oanda: 'OANDA Practice, средняя цена, тиковый объём', yahoo: 'Yahoo Finance'};
+export const OANDA = 'https://api-fxpractice.oanda.com';
 
 async function timed(request, url, read) {
   const started = Date.now();
@@ -95,6 +98,8 @@ export const FIAT_BASES = ['XAU', 'XAG', 'EUR', 'GBP', 'JPY', 'AUD', 'CHF', 'CAD
 export async function probeFiat(request = fetch) {
   const jobs = [], re = new RegExp('^(' + FIAT_BASES.join('|') + ')');
   const add = (source, symbol, url, read) => jobs.push(timed(request, url, read).then(r => ({source, symbol, ...r})));
+  // Без токена OANDA отвечает 401 — значит, сервер из Cloudflare доступен.
+  add('oanda', 'EUR_USD без токена', `${OANDA}/v3/instruments/EUR_USD/candles?count=2&granularity=M15`, () => ({}));
   for (const cat of ['linear', 'spot']) add('bybit', 'тикеры ' + cat, `${BYBIT}/v5/market/tickers?category=${cat}`, j => ({symbols: (j.result?.list || []).map(x => x.symbol).filter(s => re.test(s)).sort().join(' ') || 'нет'}));
   for (const b of FIAT_BASES) {
     add('mexc', b + 'USDT', `${MEXC}/api/v3/ticker/24hr?symbol=${b}USDT`, j => ({price: Number(j.lastPrice), volume: Number(j.quoteVolume)}));

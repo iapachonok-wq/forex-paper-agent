@@ -32,5 +32,5 @@ test('metals use Yahoo; 4h candles built from hours; no source means a clear err
  const seen=[];await assert.rejects(analyzeAsset(findAsset('XAU'),async url=>{seen.push(url);return {ok:false,status:404};},now),/Нет данных: Bybit, бессрочные фьючерсы — HTTP 404; Yahoo Finance — HTTP 404/);
  assert(seen.some(u=>u.startsWith(BYBIT)&&u.includes('symbol=XAUUSDT')));assert(seen.some(u=>u.startsWith(YAHOO)&&u.includes('GC%3DF')));
  const fx=[];await assert.rejects(analyzeAsset(findAsset('EUR'),async url=>{fx.push(url);return {ok:false,status:404};},now));assert(fx.some(u=>u.includes('symbol=EURUSDUSDT')));assert(fx.some(u=>u.includes('EURUSD%3DX')));
- const jpy=[];await assert.rejects(analyzeAsset(findAsset('JPY'),async url=>{jpy.push(url);return {ok:false,status:404};},now));assert(jpy.every(u=>u.startsWith(YAHOO)&&u.includes('JPY%3DX')),'JPY has no USDT market, Yahoo only');
+ const jpy=[];await assert.rejects(analyzeAsset(findAsset('JPY'),async url=>{jpy.push(url);return {ok:false,status:404};},now));assert(jpy.every(u=>u.startsWith(YAHOO)&&u.includes('JPY%3DX')),'without an OANDA profile JPY goes straight to Yahoo');
 });

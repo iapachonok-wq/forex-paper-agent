@@ -1,5 +1,5 @@
 // Загрузка свечей 15м / 1ч / 4ч для раздела «Рынки» с запасными источниками.
-import {ASSETS, chainFor, SOURCE_LABELS, BYBIT, GATE, MEXC, KRAKEN, YAHOO, feeFor} from './markets.js';
+import {ASSETS, chainFor, SOURCE_LABELS, BYBIT, GATE, MEXC, KRAKEN, YAHOO, OANDA, feeFor} from './markets.js';
 import {analyze, features, RULES} from './market-rules.js';
 export const rulesFor = (asset, source) => ({...RULES, fee_pct: feeFor(asset, source)});
 import {story, chartData} from './market-story.js';
@@ -43,6 +43,15 @@ const SOURCES = {
     if (!Array.isArray(rows)) throw Error('MEXC: пустой ответ');
     return rows.map(r => ({t: Number(r[0]), o: +r[1], h: +r[2], l: +r[3], c: +r[4], v: +r[5]}));
   },
+  // Только чтение свечей демо-сервера OANDA с токеном из сохранённого профиля. Ордеров нет.
+  async oanda(asset, tf, request, opts) {
+    const url = `${OANDA}/v3/instruments/${asset.oanda}/candles?granularity=${{'15m': 'M15', '1h': 'H1', '4h': 'H4'}[tf]}&count=${LIMIT[tf]}&price=M&dailyAlignment=0&alignmentTimezone=UTC`;
+    const r = await request(url, {headers: {Authorization: 'Bearer ' + opts.oandaToken}, redirect: 'error', signal: AbortSignal.timeout(10000)});
+    if (!r.ok) throw Error('OANDA HTTP ' + r.status);
+    const j = await r.json();
+    if (!Array.isArray(j.candles)) throw Error('OANDA: пустой ответ');
+    return j.candles.filter(c => c.complete && c.mid).map(c => ({t: Date.parse(c.time.replace(/\.\d+Z$/, 'Z')), o: +c.mid.o, h: +c.mid.h, l: +c.mid.l, c: +c.mid.c, v: Number(c.volume) || 0}));
+  },
   async kraken(asset, tf, request) {
     const pair = (asset.id === 'BTC' ? 'XBT' : asset.id) + 'USD';
     const j = await getJson(request, `${KRAKEN}/0/public/OHLC?pair=${pair}&interval=${{'15m': 15, '1h': 60, '4h': 240}[tf]}`);
@@ -77,11 +86,13 @@ async function bybitExtra(asset, request) {
   return out;
 }
 
-export async function loadMarket(asset, request = fetch, now = Date.now()) {
+// Источник применим к активу: у актива есть символ этой площадки, а для OANDA ещё и сохранён профиль.
+const usable = (source, asset, opts) => source === 'oanda' ? !!(asset.oanda && opts.oandaToken) : source === 'yahoo' ? !!asset.yahoo : source === 'kraken' || source === 'gate' ? asset.group === 'crypto' : !!asset.binance;
+export async function loadMarket(asset, request = fetch, now = Date.now(), opts = {}) {
   const attempts = [];
-  for (const source of chainFor(asset)) {
+  for (const source of chainFor(asset).filter(s => usable(s, asset, opts))) {
     try {
-      const [d15, d1h, d4h] = await Promise.all(['15m', '1h', '4h'].map(async tf => closedOnly(await SOURCES[source](asset, tf, request), tf, now)));
+      const [d15, d1h, d4h] = await Promise.all(['15m', '1h', '4h'].map(async tf => closedOnly(await SOURCES[source](asset, tf, request, opts), tf, now)));
       const short = [['15m', d15], ['1h', d1h], ['4h', d4h]].find(([tf, b]) => b.length < MIN[tf]);
       if (short) throw Error(`мало свечей ${short[0]}: ${short[1].length}`);
       const extra = source === 'bybit' ? await bybitExtra(asset, request) : {funding_pct: null, oi_change_pct: null};
@@ -96,8 +107,8 @@ export async function loadMarket(asset, request = fetch, now = Date.now()) {
 export function findAsset(id) { return ASSETS.find(a => a.id === id); }
 
 // Анализ одного актива. Только чтение данных и расчёт, без записи и без сделок.
-export async function analyzeAsset(asset, request = fetch, now = Date.now(), detail = false) {
-  const m = await loadMarket(asset, request, now), cfg = rulesFor(asset, m.source);
+export async function analyzeAsset(asset, request = fetch, now = Date.now(), detail = false, opts = {}) {
+  const m = await loadMarket(asset, request, now, opts), cfg = rulesFor(asset, m.source);
   const result = analyze(asset.binance || asset.id, m.d15, m.d1h, m.d4h, cfg, m.extra);
   const last = m.d15.at(-1), closedAt = last.t + 900000;
   const volume = m.d15.some(b => b.v > 0);

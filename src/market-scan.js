@@ -90,13 +90,13 @@ export async function readScanState(env) {
   return r ? {...initialScanState(), ...JSON.parse(r.body)} : initialScanState();
 }
 
-export async function marketScan(env, request = fetch, now = Date.now()) {
+export async function marketScan(env, request = fetch, now = Date.now(), opts = {}) {
   await ensureTables(env);
   const st = await readScanState(env);
   const rows = await env.DB.prepare("SELECT body FROM market_signals WHERE status='открыт'").all();
   const open = rows.results.map(r => JSON.parse(r.body));
   try {
-    const out = await scanStep(st, open, asset => loadMarket(asset, request, now), now);
+    const out = await scanStep(st, open, asset => loadMarket(asset, request, now, opts), now);
     st.lastError = null;
     const ops = [env.DB.prepare('INSERT INTO market_state(id,body) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET body=excluded.body').bind(JSON.stringify(st))];
     for (const s of out.inserts) {

@@ -12,6 +12,8 @@ import {marketScan,signalJournal} from './market-scan.js';
 // Отдельные расписания: валютный агент и сканер рынков работают в разных запусках,
 // у каждого свой лимит процессора, сбой одного не мешает другому.
 const FOREX_CRON='*/5 * * * *';
+// Токен OANDA Practice из сохранённого профиля (зашифрован в D1). Нужен только для чтения свечей.
+async function marketOpts(env){try{const rows=await env.DB.prepare("SELECT sealed FROM credentials WHERE name LIKE 'broker:%'").all();for(const row of rows.results){const p=JSON.parse(await open(env,row.sealed));if(p.provider==='oanda_practice'&&p.token)return {oandaToken:p.token};}}catch{}return {};}
 const enc=new TextEncoder();const now=()=>Date.now();
 const json=(v,status=200,headers={})=>new Response(JSON.stringify(v),{status,headers:{'Content-Type':'application/json','Cache-Control':'no-store','X-Content-Type-Options':'nosniff',...headers}});
 async function readBody(req){const reader=req.body?.getReader();if(!reader)throw Error('Body required');let text='',size=0;const decoder=new TextDecoder();while(true){const {done,value}=await reader.read();if(done)break;size+=value.length;if(size>8192){await reader.cancel();throw Error('Request too large');}text+=decoder.decode(value,{stream:true});}return JSON.parse(text+decoder.decode());}
@@ -81,7 +83,7 @@ export async function cycle(env){return lease(env,async(s,persist)=>{
  }catch(e){s.lastError=String(e.message).slice(0,180);await persist();await event(env,'error',{message:s.lastError});throw e;}
  });}
 export default {
- async scheduled(event,env,ctx){if(event.cron===FOREX_CRON)ctx.waitUntil(cycle(env).catch(()=>{}));else ctx.waitUntil(marketScan(env).catch(()=>{}));},
+ async scheduled(event,env,ctx){if(event.cron===FOREX_CRON)ctx.waitUntil(cycle(env).catch(()=>{}));else ctx.waitUntil(marketOpts(env).then(o=>marketScan(env,fetch,Date.now(),o)).catch(()=>{}));},
  async fetch(req,env){const url=new URL(req.url),path=url.pathname;
  if(!path.startsWith('/api/'))return env.ASSETS.fetch(req);
  try{
@@ -133,9 +135,9 @@ export default {
  if(path==='/api/markets/sources'&&req.method==='GET')return json(await probeSources());
  if(path==='/api/markets/fiat-sources'&&req.method==='GET')return json(await probeFiat());
  if(path==='/api/markets/signals'&&req.method==='GET')return json(await signalJournal(env));
- if(path==='/api/markets/scan'&&req.method==='POST'){const t=Date.now();const r=await marketScan(env);return json({...r,ms:Date.now()-t});}
+ if(path==='/api/markets/scan'&&req.method==='POST'){const t=Date.now();const r=await marketScan(env,fetch,Date.now(),await marketOpts(env));return json({...r,ms:Date.now()-t});}
  if(path==='/api/markets/assets'&&req.method==='GET')return json({assets:ASSETS.map(({id,name,group})=>({id,name,group}))});
- if(path==='/api/markets/analysis'&&req.method==='GET'){const asset=findAsset(url.searchParams.get('id'));if(!asset)return json({error:'Неизвестный актив'},400);return json(await analyzeAsset(asset,fetch,Date.now(),url.searchParams.get('detail')==='1'));}
+ if(path==='/api/markets/analysis'&&req.method==='GET'){const asset=findAsset(url.searchParams.get('id'));if(!asset)return json({error:'Неизвестный актив'},400);return json(await analyzeAsset(asset,fetch,Date.now(),url.searchParams.get('detail')==='1',await marketOpts(env)));}
  if(path==='/api/feeds'&&req.method==='GET')return json({prices:await quotes(),fred:await macro(env)});
  if(path==='/api/shadow-preview'&&req.method==='GET'){
  const symbol=url.searchParams.get('symbol');if(!cfg.symbols.includes(symbol))return json({error:'Неизвестная пара'},400);
