@@ -6,7 +6,8 @@ import cfg from './config.js';
 import {initial,check,execute,watch,equity,closedMarket,scenario} from './engine.js';
 import {market,quotes,headlines,chartBars} from './data.js';
 import {ANALYST_PROMPT,CRITIC_PROMPT,CRITIC_SCHEMA} from './prompts.js';
-import {probeSources} from './markets.js';
+import {probeSources,ASSETS} from './markets.js';
+import {analyzeAsset,findAsset} from './market-data.js';
 const enc=new TextEncoder();const now=()=>Date.now();
 const json=(v,status=200,headers={})=>new Response(JSON.stringify(v),{status,headers:{'Content-Type':'application/json','Cache-Control':'no-store','X-Content-Type-Options':'nosniff',...headers}});
 async function readBody(req){const reader=req.body?.getReader();if(!reader)throw Error('Body required');let text='',size=0;const decoder=new TextDecoder();while(true){const {done,value}=await reader.read();if(done)break;size+=value.length;if(size>8192){await reader.cancel();throw Error('Request too large');}text+=decoder.decode(value,{stream:true});}return JSON.parse(text+decoder.decode());}
@@ -126,6 +127,8 @@ export default {
  }));
  }
  if(path==='/api/markets/sources'&&req.method==='GET')return json(await probeSources());
+ if(path==='/api/markets/assets'&&req.method==='GET')return json({assets:ASSETS.map(({id,name,group})=>({id,name,group}))});
+ if(path==='/api/markets/analysis'&&req.method==='GET'){const asset=findAsset(url.searchParams.get('id'));if(!asset)return json({error:'Неизвестный актив'},400);return json(await analyzeAsset(asset));}
  if(path==='/api/feeds'&&req.method==='GET')return json({prices:await quotes(),fred:await macro(env)});
  if(path==='/api/shadow-preview'&&req.method==='GET'){
  const symbol=url.searchParams.get('symbol');if(!cfg.symbols.includes(symbol))return json({error:'Неизвестная пара'},400);

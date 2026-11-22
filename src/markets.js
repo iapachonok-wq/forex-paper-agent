@@ -16,11 +16,14 @@ const COINS = ['BTC', 'ETH', 'SOL', 'BNB', 'XRP', 'DOGE', 'ADA', 'TRX', 'AVAX', 
 const YAHOO_CRYPTO = {TON: 'TON11419-USD'};
 export const ASSETS = [
   ...COINS.map(c => ({id: c, name: c + '/USDT', group: 'crypto', binance: c + 'USDT', yahoo: [YAHOO_CRYPTO[c] || c + '-USD']})),
-  {id: 'XAU', name: 'Золото XAU/USD', group: 'metal', binance: 'XAUUSDT', yahoo: ['GC=F']},
-  {id: 'XAG', name: 'Серебро XAG/USD', group: 'metal', binance: 'XAGUSDT', yahoo: ['SI=F']},
-  {id: 'SPX', name: 'S&P 500', group: 'index', yahoo: ['^GSPC', 'ES=F']},
-  {id: 'NDX', name: 'Nasdaq 100', group: 'index', yahoo: ['^NDX', 'NQ=F']},
+  {id: 'XAU', name: 'Золото XAU/USD', group: 'metal', binance: 'XAUUSDT', yahoo: ['GC=F'], note: 'фьючерс COMEX'},
+  {id: 'XAG', name: 'Серебро XAG/USD', group: 'metal', binance: 'XAGUSDT', yahoo: ['SI=F'], note: 'фьючерс COMEX'},
+  {id: 'SPX', name: 'S&P 500', group: 'index', yahoo: ['ES=F', '^GSPC'], note: 'фьючерс E-mini CME'},
+  {id: 'NDX', name: 'Nasdaq 100', group: 'index', yahoo: ['NQ=F', '^NDX'], note: 'фьючерс E-mini CME'},
 ];
+// Порядок источников: первый ответивший с достаточной историей используется для анализа.
+export const CHAINS = {crypto: ['bybit', 'gate', 'mexc', 'yahoo'], metal: ['yahoo'], index: ['yahoo']};
+export const SOURCE_LABELS = {bybit: 'Bybit, бессрочные фьючерсы', gate: 'Gate, спот', mexc: 'MEXC, спот', yahoo: 'Yahoo Finance'};
 
 async function timed(request, url, read) {
   const started = Date.now();
