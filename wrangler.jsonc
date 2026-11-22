@@ -1,0 +1,28 @@
+{
+  "name": "forex-paper-agent",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-11-14",
+  "workers_dev": true,
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": [
+      "/api/*"
+    ]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "forex-paper-agent",
+      "database_id": "32fde71c-805c-4f31-ba1b-cc74b7ee1a84"
+    }
+  ],
+  "triggers": {
+    "crons": [
+      "*/5 * * * *"
+    ]
+  },
+  "observability": {
+    "enabled": false
+  }
+}

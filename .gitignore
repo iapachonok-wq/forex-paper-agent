@@ -1,0 +1,9 @@
+node_modules/
+.wrangler/
+.dev.vars
+*.secrets.json
+
+.env*
+*.enc
+*.pem
+import-history.sql
