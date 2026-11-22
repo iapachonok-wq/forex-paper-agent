@@ -66,7 +66,7 @@ function renderAsset(r){
  const idea=st.idea;
  if(idea){const box=node('div',undefined,'entryBanner '+sideClass(idea.dir));box.append(node('div',(idea.signal?'Вход по сигналу: ':'Вход был бы: ')+(idea.dir>0?'ЛОНГ':'ШОРТ')+' ≈ '+fmtPrice(idea.entry),'entryBig'),node('div',`стоп ${fmtPrice(idea.stop)} · цель ${fmtPrice(idea.target)}`+(idea.signal?'':' · ориентир, сетапа пока нет'),'entrySmall'));host.append(box);}
  host.append(node('p','Данные: '+r.sourceName+(r.volume?'':' · без объёма')+(r.fee_pct?' · комиссия '+r.fee_pct+' % за сторону (оценка)':'')+' · последняя закрытая свеча до '+localTime(r.closedAt)+' (Нью-Йорк)'+(r.stale?' · данные старые: рынок закрыт или источник отстаёт':''),'muted'));
- const scroll=node('div',undefined,'chartScroll');scroll.append(drawMarketChart(r));host.append(scroll);
+ const scroll=node('div',undefined,'chartScroll');scroll.append(drawMarketChart(r));host.append(scroll);requestAnimationFrame(()=>{scroll.scrollLeft=scroll.scrollWidth;});
  host.append(node('p','Оранжевая — EMA 50 (1ч), синяя — EMA 200 (1ч), фиолетовый пунктир — VWAP за сутки, серые точки — уровни. Внизу объём со средней за 20 и RSI 14.','muted'));
  const info=node('p','Наведите на свечу или коснитесь её, чтобы увидеть цены.','muted');info.id='marketBarInfo';host.append(info);
  if(s){const box=node('article',undefined,'marketBanner');box.append(node('h3','Сетап по правилу: '+s.side));const list=node('ul');for(const t of [`Вход ${fmtPrice(s.entry)}`,`Стоп ${fmtPrice(s.stop)} (${s.risk_pct_price.toFixed(2)} %)`,`Цель 1 ${fmtPrice(s.tp1)} (1 : ${s.rr.toFixed(1)}, с комиссией 1 : ${s.rr_net.toFixed(2)})`,`Комиссия за вход и выход ≈ ${fmtPrice(s.cost)} (${s.cost_r.toFixed(2)} R)`,`Цель 2 ${fmtPrice(s.tp2)} (1 : 3)`,`Размер при риске $${s.risk_usd} учебного счёта $1000: ${s.qty.toPrecision(4)}`,...s.reasons,...s.warnings.map(w=>'⚠ '+w)])list.append(node('li',t));box.append(list,node('small','Отмена: 15м свеча закрылась за стопом. Это разбор по правилам, не совет и не сделка: на демо-счёте ничего не исполняется.'));host.append(box);}
@@ -89,7 +89,8 @@ function drawMarketChart(r){
  const x=i=>left+(i+.5)*step,y=p=>P[1]-(p-lo)/(hi-lo)*(P[1]-P[0]),plotRight=left+n*step;
  const clip=el('clipPath',{id:'priceClip'});clip.append(el('rect',{x:0,y:P[0],width:plotRight+30,height:P[1]-P[0]}));svg.append(clip);
  const g=el('g',{'clip-path':'url(#priceClip)'});svg.append(g);
- for(let i=0;i<=4;i++){const p=lo+(hi-lo)*i/4;svg.append(el('line',{x1:left,x2:plotRight,y1:y(p),y2:y(p),class:'chartGrid'}),el('text',{x:plotRight+6,y:y(p)+4,class:'chartLabel'},fmtPrice(p)));}
+ // Подпись шкалы пропускаем, если рядом подпись входа, стопа или цели.
+ for(let i=0;i<=4;i++){const p=lo+(hi-lo)*i/4;svg.append(el('line',{x1:left,x2:plotRight,y1:y(p),y2:y(p),class:'chartGrid'}));if(!marks.some(m=>Math.abs(y(m)-y(p))<12))svg.append(el('text',{x:plotRight+6,y:y(p)+4,class:'chartLabel'},fmtPrice(p)));}
  for(const lv of c.levels)if(lv>lo&&lv<hi){g.append(el('line',{x1:left,x2:plotRight,y1:y(lv),y2:y(lv),stroke:'#8a8f99','stroke-dasharray':'2 4'}));g.append(el('text',{x:left+4,y:y(lv)-3,class:'chartLabel'},'уровень '+fmtPrice(lv)));}
  const line=(vals,attrs)=>{let d='',pen=false;vals.forEach((v,i)=>{if(v==null){pen=false;return;}d+=(pen?'L':'M')+x(i).toFixed(1)+' '+y(v).toFixed(1);pen=true;});if(d)g.append(el('path',{d,fill:'none',...attrs}));};
  line(c.ema200,{stroke:'#5b8cff','stroke-width':1.6});
@@ -114,7 +115,7 @@ function drawMarketChart(r){
   if(s)svg.append(el('line',{x1:x0,x2:x1,y1:y(s.tp2),y2:y(s.tp2),stroke:'#40c4ff','stroke-width':1,'stroke-dasharray':'2 4'}),el('text',{x:x1+2,y:y(s.tp2)+4,fill:'#40c4ff','font-size':10},'ЦЕЛЬ 2 '+fmtPrice(s.tp2)));
   svg.append(el('line',{x1:left,x2:x1,y1:y(idea.entry),y2:y(idea.entry),stroke:col,'stroke-width':3,'stroke-dasharray':idea.signal?'none':'10 5'}));
   const tag=(idea.signal?'ВХОД ':'ВХОД БЫЛ БЫ ')+side+' '+fmtPrice(idea.entry),ty=y(idea.entry)+(idea.dir>0?-8:20);
-  svg.append(el('text',{x:left+8,y:ty,fill:col,'font-size':18,'font-weight':800,stroke:'#101c19','stroke-width':4,'paint-order':'stroke'},tag));}
+  svg.append(el('text',{x:x0-6,y:ty,'text-anchor':'end',fill:col,'font-size':18,'font-weight':800,stroke:'#101c19','stroke-width':4,'paint-order':'stroke'},tag));}
  return svg;
 }
 window.addEventListener('hashchange',()=>{if(location.hash==='#markets'&&!marketsLoaded)loadMarkets();});
